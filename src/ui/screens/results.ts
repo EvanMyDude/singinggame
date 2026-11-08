@@ -1,9 +1,10 @@
 import { keyName, keyPrefersFlats, noteNameWithOctave } from '../../core/music';
-import { THRESHOLDS, pitchInsights, weakestSection, type Counts, type Judgment, type NoteResult, type PitchInsight } from '../../core/scoring';
+import { THRESHOLDS, phraseInsights, pitchInsights, weakestSection, type Counts, type Judgment, type NoteResult, type PhraseInsight, type PitchInsight } from '../../core/scoring';
 import type { Song } from '../../core/song';
 import type { AttemptRecord } from '../../core/storage';
 import type { App, PlayConfig, Route, Screen } from '../app';
 import { backButton, fmtInt, h } from '../dom';
+import { deviationTimeline } from '../render/deviation';
 import type { TrailPt } from '../render/highway';
 import { sparkline } from './songs';
 
@@ -81,6 +82,7 @@ export function resultsScreen(app: App, route: Route): Screen {
     app.go({ name: 'play', config: { ...r.config, mode: 'practice', section: weakIdx, speed: 0.75, loop: true, guide: true, backing: true } });
 
   const ins = pitchInsights(r.notes);
+  const phrases = phraseInsights(song, r.notes);
   // Consistently late entries usually mean uncompensated audio latency (e.g. Bluetooth).
   const onsets = r.notes.map((n) => n.onset).filter((o): o is number => o !== null).sort((a, b) => a - b);
   const medianOnset = onsets.length >= 5 ? onsets[onsets.length >> 1]! : 0;
@@ -138,15 +140,28 @@ export function resultsScreen(app: App, route: Route): Screen {
     ),
     h(
       'div',
-      { class: 'card', style: 'margin-top:22px' },
-      h('div', { class: 'row', style: 'justify-content:space-between;margin-bottom:6px' }, h('div', { class: 'panel-title', style: 'margin:0' }, 'Note by note'), legend()),
-      ...timelineRows(song, r, nn),
+      { class: 'two-col', style: 'margin-top:22px' },
+      h(
+        'div',
+        { class: 'card' },
+        h('div', { class: 'panel-title' }, 'What you nailed'),
+        phrases.best ? phraseRow(phrases.best, true) : null,
+        ...(ins.nailed.length ? ins.nailed.map((p) => insightRow(p, nn, true, song)) : [h('div', { class: 'muted small' }, 'No pitch was clean every time yet. Keep going.')]),
+      ),
+      h(
+        'div',
+        { class: 'card' },
+        h('div', { class: 'panel-title' }, 'What you struggled with'),
+        phrases.hardest ? phraseRow(phrases.hardest, false) : null,
+        ...(ins.struggled.length ? ins.struggled.map((p) => insightRow(p, nn, false, song)) : [h('div', { class: 'muted small' }, 'Nothing stood out. Every pitch was close.')]),
+      ),
     ),
+    h('div', { class: 'card', style: 'margin-top:14px' }, deviationTimeline(song, r.notes, nn)),
     h(
       'div',
-      { class: 'two-col', style: 'margin-top:14px' },
-      h('div', { class: 'card' }, h('div', { class: 'panel-title' }, 'Notes you nailed'), ...(ins.nailed.length ? ins.nailed.map((p) => insightRow(p, nn, true, song)) : [h('div', { class: 'muted small' }, 'No pitch was clean every time yet. Keep going.')])),
-      h('div', { class: 'card' }, h('div', { class: 'panel-title' }, 'Notes you struggled with'), ...(ins.struggled.length ? ins.struggled.map((p) => insightRow(p, nn, false, song)) : [h('div', { class: 'muted small' }, 'Nothing stood out. Every pitch was close.')])),
+      { class: 'card', style: 'margin-top:14px' },
+      h('div', { class: 'row', style: 'justify-content:space-between;margin-bottom:6px' }, h('div', { class: 'panel-title', style: 'margin:0' }, 'Note by note'), legend()),
+      ...timelineRows(song, r, nn),
     ),
     fullRuns.length >= 2 ? h('div', { class: 'card', style: 'margin-top:14px' }, sparkline(fullRuns)) : null,
     base && base.pdNote ? h('p', { class: 'faint tiny', style: 'margin-top:18px' }, base.pdNote) : null,
@@ -231,5 +246,20 @@ function insightRow(p: PitchInsight, nn: (m: number) => string, good: boolean, s
     h('span', { class: 'note', style: `color:${color}` }, nn(p.midi)),
     h('div', { class: 'grow' }, h('div', null, `${good ? `${Math.round(p.accuracy * 100)}% · ` : ''}${dirText}`), context ? h('div', { class: 'faint tiny' }, context) : null),
     h('span', { class: 'faint tiny' }, good ? `${p.total}×` : `${p.count} of ${p.total}`),
+  );
+}
+
+function phraseRow(p: PhraseInsight, good: boolean): HTMLElement {
+  const bias = p.bias;
+  const dir = !Number.isFinite(bias)
+    ? 'mostly not sung'
+    : Math.abs(bias) <= THRESHOLDS.perfect
+      ? 'centered'
+      : `mostly ${bias > 0 ? 'sharp ↑' : 'flat ↓'} (${Math.round(Math.abs(bias))} cents)`;
+  return h(
+    'div',
+    { class: 'insight' },
+    h('span', { class: 'note', style: `color:${good ? 'var(--perfect)' : 'var(--off)'};font-size:13px;min-width:86px` }, good ? 'Best line' : 'Hardest line'),
+    h('div', { class: 'grow' }, h('div', null, `“${p.text.replace(/[,;:]$/, '')}”`), h('div', { class: 'faint tiny' }, `${Math.round(p.accuracy * 100)}% · ${dir}`)),
   );
 }

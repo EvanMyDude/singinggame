@@ -7,9 +7,11 @@ import {
   frameAccuracy,
   gradeFor,
   multiplierFor,
+  phraseInsights,
   pitchInsights,
   timingScore,
   weakestSection,
+  zoneFor,
   type ScoreFrame,
 } from '../src/core/scoring';
 import { buildSong, lyricWords, parseChords, parseMelody, transposeSong, type SongSource } from '../src/core/song';
@@ -142,6 +144,9 @@ describe('scoring primitives', () => {
     expect(frameAccuracy(50)).toBeCloseTo(0.42, 2);
     expect(frameAccuracy(100)).toBeLessThan(0.03);
   });
+  it('uses the specified cents bands: Perfect ±10, Great ±25, Good ±50', () => {
+    expect([0, 10, 10.5, 25, 25.5, 50, 50.5, 200].map(zoneFor)).toEqual(['perfect', 'perfect', 'great', 'great', 'good', 'good', 'off', 'off']);
+  });
   it('multiplier tiers and grades', () => {
     expect([0, 3, 4, 8, 16, 40].map(multiplierFor)).toEqual([1, 1, 1.5, 2, 3, 3]);
     expect([99, 90, 80, 65, 50, 10].map(gradeFor)).toEqual(['S', 'A', 'B', 'C', 'D', 'F']);
@@ -254,6 +259,17 @@ describe('ScoreEngine with simulated singers', () => {
     for (const p of ins.struggled) expect(p.bias).toBeLessThan(-25);
     expect(ins.struggled.some((p) => flatPitches.has(p.midi) && p.count < p.total)).toBe(true);
     for (const p of ins.nailed) expect(flatPitches.has(p.midi)).toBe(false);
+  });
+
+  it('names the hardest and best lyric lines', () => {
+    const frames = simulateSinger(song, t0, spb, fi, { sigmaCents: 3 }).map((f) =>
+      f.time > t0 + 8 * spb ? { ...f, midi: f.midi - 0.45 } : f,
+    );
+    const p = phraseInsights(song, play(frames).results);
+    expect(p.lines.map((l) => l.text)).toEqual(['Twinkle twinkle little star,', 'How I wonder what you are.']);
+    expect(p.hardest?.text).toBe('How I wonder what you are.');
+    expect(p.hardest!.bias).toBeLessThan(-25);
+    expect(p.best?.text).toBe('Twinkle twinkle little star,');
   });
 
   it('finds the weakest section', () => {

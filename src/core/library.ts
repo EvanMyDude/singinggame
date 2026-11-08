@@ -96,36 +96,6 @@ export const SOURCES: SongSource[] = [
     ],
   },
   {
-    id: 'saints',
-    title: 'When the Saints Go Marching In',
-    credit: 'African-American spiritual · traditional',
-    pdNote:
-      'Traditional spiritual, first recorded 1923; widely accepted as public domain (no known copyrighted original). Later published arrangements are copyrighted and are not used here.',
-    bpm: 116,
-    beatsPerBar: 4,
-    tonic: 'C',
-    mode: 'major',
-    difficulty: 2,
-    style: 'march',
-    melody: `
-      R:1 C4:1 E4 F4 | G4:4 | R:1 C4:1 E4 F4 | G4:4 |
-      R:1 C4:1 E4 F4 | G4:2 E4:2 | C4:2 E4:2 | D4:4 |
-      R:1 E4:1 E4 D4 | C4:4 | E4:2 G4:2 | G4:1 F4:3 |
-      R:2 E4:1 F4:1 | G4:2 E4:2 | C4:2 D4:2 | C4:4`,
-    lyrics: `
-      Oh when the saints go march- ing in, / Oh when the saints go march- ing in, /
-      I want to be in that num- ber, / When the saints go march- ing in.`,
-    chords: `
-      C:4 | C:4 | C:4 | C:4 |
-      C:4 | C:4 | C:4 | G7:4 |
-      C:4 | C:4 | C7:4 | F:4 |
-      C:4 | C:4 | C:2 G7:2 | C:4`,
-    sections: [
-      { name: 'Oh when the saints', from: 1, to: 8 },
-      { name: 'I want to be in that number', from: 9, to: 16 },
-    ],
-  },
-  {
     id: 'amazing-grace',
     title: 'Amazing Grace',
     credit: 'Tune NEW BRITAIN (1829) · words John Newton (1779)',

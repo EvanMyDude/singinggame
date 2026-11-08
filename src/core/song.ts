@@ -290,3 +290,40 @@ export function lyricWords(notes: readonly Note[]): { text: string; noteFrom: nu
 export function secondsPerBeat(song: Pick<Song, 'bpm'>, speed: number): number {
   return 60 / (song.bpm * speed);
 }
+
+/**
+ * Display lines for notes [from, to): authored `/` breaks when the song has them, otherwise
+ * a heuristic that breaks at punctuation, rests and long phrases without splitting words.
+ */
+export function lyricLines(song: Song, from: number, to: number): { noteFrom: number; noteTo: number }[] {
+  const out: { noteFrom: number; noteTo: number }[] = [];
+  let start = from;
+  if (song.notes.some((n) => n.line !== undefined)) {
+    // Authored line breaks (built-in songs).
+    for (let i = from + 1; i < to; i++) {
+      if (song.notes[i]!.line) {
+        out.push({ noteFrom: start, noteTo: i });
+        start = i;
+      }
+    }
+    out.push({ noteFrom: start, noteTo: to });
+    return out;
+  }
+  // Heuristic for imported songs.
+  for (let i = from; i < to; i++) {
+    const n = song.notes[i]!;
+    const next = song.notes[i + 1];
+    // Punctuation ends a line only once it has some length, so lines are not choppy.
+    const punct = /[,.;:!?]$/.test(n.lyric) && (i - start >= 5 || /[.!?]$/.test(n.lyric));
+    const gap = next ? next.start - (n.start + n.beats) >= 1 : true;
+    const long = i - start >= 13;
+    const lastInWindow = i === to - 1;
+    // Do not break inside a word or before a melisma continuation.
+    const midWord = n.lyric.endsWith('-') || (next !== undefined && next.lyric === '');
+    if (lastInWindow || ((punct || gap || long) && !midWord)) {
+      out.push({ noteFrom: start, noteTo: i + 1 });
+      start = i + 1;
+    }
+  }
+  return out;
+}

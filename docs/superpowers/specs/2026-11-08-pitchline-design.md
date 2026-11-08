@@ -57,10 +57,10 @@ Parsed form: `{ midi, startBeat, beats, lyric }[]`, plus `bpm`, meter, tonic/mod
 - Error per frame is the cents deviation from the target, folded to the nearest octave (octave forgiveness on by default, toggleable).
 - Continuous frame accuracy `a(e) = exp(-(max(0, e - 8) / 45)^2)`: about 0.87 at 25 cents, 0.42 at 50 cents, 0.02 at 100 cents.
 - Note value = 100 points per beat (speed-independent). Points accrue live per frame up to the note value, times the combo multiplier.
-- Note judgment from the median absolute error of its voiced frames: Perfect <= 15 cents, Great <= 30, Good <= 50, else Off; Miss if under 30 % of the note was sung. (Tuned from the 10/25/50 example: 10 cents is below normal amateur scatter and made held notes flicker between grades.)
+- Note judgment from the median absolute error of its voiced frames: Perfect <= 10 cents, Great <= 25, Good <= 50, else Off; Miss if under 30 % of the note was sung. The same bands color the live feedback (green / yellow / orange / red). (v1 used 15/30/50; v2 adopts the requested 10/25/50. Judging on the per-note median keeps vibrato and frame jitter from flickering the grade.)
 - Combo: consecutive Good-or-better notes. Multiplier x1 / x1.5 / x2 / x3 at streak 0 / 4 / 8 / 16.
-- Hold bonus: notes of 1.5 beats or more with at least 70 % of frames within 30 cents earn +50 % of note value.
-- Clean-entry bonus (smooth transitions): reaching within 30 cents of the new note within 120 ms of its start earns +20 %.
+- Hold bonus: notes of 1.5 beats or more with at least 70 % of frames within the Great band (25 cents) earn +50 % of note value.
+- Clean-entry bonus (smooth transitions): reaching within 50 cents of the new note within 120 ms of its start (and not judged Off) earns +20 %.
 - Pitch accuracy % = beat-weighted mean of note accuracy. Timing accuracy % = mean onset score (1 at <= 100 ms, linear to 0 at 400 ms). Grade from pitch accuracy: S 93, A 85, B 75, C 60, D 45, else F.
 - Timing forgiveness: a frame near a note boundary (within 100 ms) is matched against the neighbor note if it fits it better, so a late or early transition is not counted as wrong pitch.
 

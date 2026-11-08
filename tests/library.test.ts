@@ -3,12 +3,11 @@ import { arrange, countIn } from '../src/core/arrange';
 import { LIBRARY, SOURCES } from '../src/core/library';
 import { noteNameWithOctave } from '../src/core/music';
 import { chooseTransposition, RANGE_PRESETS } from '../src/core/range';
-import { lyricWords } from '../src/core/song';
-import { buildPhrases } from '../src/ui/screens/play';
+import { lyricLines, lyricWords } from '../src/core/song';
 
 describe('built-in library', () => {
-  it('has the six verified songs with unique ids and PD notes', () => {
-    expect(LIBRARY.map((s) => s.id)).toEqual(['twinkle', 'frere-jacques', 'ode-to-joy', 'saints', 'amazing-grace', 'auld-lang-syne']);
+  it('has only the verified public-domain songs, with unique ids and PD notes', () => {
+    expect(LIBRARY.map((s) => s.id)).toEqual(['twinkle', 'frere-jacques', 'ode-to-joy', 'amazing-grace', 'auld-lang-syne']);
     for (const s of SOURCES) expect(s.pdNote.length).toBeGreaterThan(20);
   });
 
@@ -77,7 +76,7 @@ describe('built-in library', () => {
       });
 
       it('splits lyrics into display lines without breaking words', () => {
-        const phrases = buildPhrases(song, 0, song.notes.length);
+        const phrases = lyricLines(song, 0, song.notes.length);
         expect(phrases[0]!.noteFrom).toBe(0);
         expect(phrases[phrases.length - 1]!.noteTo).toBe(song.notes.length);
         for (const p of phrases) {

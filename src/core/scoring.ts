@@ -1,5 +1,5 @@
 import { centsError } from './music';
-import type { Note, Song } from './song';
+import { lyricLines, lyricWords, type Note, type Song } from './song';
 
 /**
  * Scoring model (see docs/superpowers/specs/2026-11-08-pitchline-design.md section 4).
@@ -14,7 +14,8 @@ import type { Note, Song } from './song';
 export type Judgment = 'perfect' | 'great' | 'good' | 'off' | 'miss';
 export type Zone = 'perfect' | 'great' | 'good' | 'off';
 
-export const THRESHOLDS = { perfect: 15, great: 30, good: 50 } as const;
+/** Note and live-feedback zones in cents: Perfect ±10, Great ±25, Good ±50, else Off. */
+export const THRESHOLDS = { perfect: 10, great: 25, good: 50 } as const;
 export const NOTE_POINTS_PER_BEAT = 100;
 const MULTIPLIER_TIERS: [number, number][] = [
   [16, 3],
@@ -123,7 +124,7 @@ interface Acc {
   sumA: number;
   base: number;
   points: number;
-  within30: number;
+  withinGreat: number;
   errs: number[];
   firstHit: number | null;
   done: boolean;
@@ -152,7 +153,7 @@ export class ScoreEngine {
       ...opts,
     };
     this.notes = song.notes;
-    this.acc = song.notes.map(() => ({ voiced: 0, sumA: 0, base: 0, points: 0, within30: 0, errs: [], firstHit: null, done: false }));
+    this.acc = song.notes.map(() => ({ voiced: 0, sumA: 0, base: 0, points: 0, withinGreat: 0, errs: [], firstHit: null, done: false }));
     this.expected = song.notes.map((n) => Math.max(1, (n.beats * this.o.secPerBeat) / this.o.frameInterval));
     this.finalizedUpTo = this.o.noteFrom;
   }
@@ -260,7 +261,7 @@ export class ScoreEngine {
     a.voiced++;
     a.sumA += fa;
     a.errs.push(cents);
-    if (abs <= THRESHOLDS.great) a.within30++;
+    if (abs <= THRESHOLDS.great) a.withinGreat++;
     if (a.firstHit === null && abs <= THRESHOLDS.good) a.firstHit = beat;
     const value = NOTE_POINTS_PER_BEAT * n.beats;
     const inc = Math.min((value * fa) / (0.8 * this.expected[idx]!), value - a.base);
@@ -331,7 +332,7 @@ export class ScoreEngine {
     const value = NOTE_POINTS_PER_BEAT * n.beats;
     const mult = this.multiplier;
     let points = a.points;
-    const hold = sung && n.beats >= 1.5 && a.within30 / expected >= 0.7;
+    const hold = sung && n.beats >= 1.5 && a.withinGreat / expected >= 0.7;
     if (hold) points += 0.5 * value * mult;
     const cleanEntry = sung && onset !== null && onset <= 0.12 && judgment !== 'off';
     if (cleanEntry) points += 0.2 * value * mult;
@@ -420,7 +421,7 @@ export interface PitchInsight {
   indices: number[];
 }
 
-/** A sung note that was clearly off: wrong pitch, missed, or more than 30 cents away. */
+/** A sung note that was clearly off: wrong pitch, missed, or more than 25 cents away. */
 export function isProblem(r: NoteResult): boolean {
   return r.judgment === 'off' || r.judgment === 'miss' || r.accuracy < 0.7 || (Number.isFinite(r.biasCents) && Math.abs(r.biasCents) > THRESHOLDS.great);
 }
@@ -476,4 +477,50 @@ export function weakestSection(song: Song, results: readonly NoteResult[]): numb
     }
   });
   return worst;
+}
+
+export interface PhraseInsight {
+  noteFrom: number;
+  noteTo: number;
+  text: string;
+  /** Beat-weighted accuracy of the line, 0..1. */
+  accuracy: number;
+  /** Median signed cents over the line's sung notes (NaN if none were sung). */
+  bias: number;
+}
+
+/**
+ * Accuracy per lyric line, plus the hardest and best line of the attempt. The hardest is
+ * reported only if it was below 85 %; the best only if it reached 85 % and differs.
+ */
+export function phraseInsights(song: Song, results: readonly NoteResult[]): { lines: PhraseInsight[]; hardest: PhraseInsight | null; best: PhraseInsight | null } {
+  if (!results.length) return { lines: [], hardest: null, best: null };
+  const byIndex = new Map(results.map((r) => [r.index, r]));
+  const from = Math.min(...results.map((r) => r.index));
+  const to = Math.max(...results.map((r) => r.index)) + 1;
+  const lines: PhraseInsight[] = [];
+  for (const l of lyricLines(song, from, to)) {
+    const rs = [] as NoteResult[];
+    for (let i = l.noteFrom; i < l.noteTo; i++) {
+      const r = byIndex.get(i);
+      if (r) rs.push(r);
+    }
+    if (!rs.length) continue;
+    const w = rs.reduce((s, r) => s + r.beats, 0);
+    const biases = rs.map((r) => r.biasCents).filter(Number.isFinite);
+    const text = lyricWords(song.notes.slice(l.noteFrom, l.noteTo)).map((x) => x.text).join(' ');
+    lines.push({
+      noteFrom: l.noteFrom,
+      noteTo: l.noteTo,
+      text: text || `Notes ${l.noteFrom + 1}–${l.noteTo}`,
+      accuracy: w ? rs.reduce((s, r) => s + r.accuracy * r.beats, 0) / w : 0,
+      bias: biases.length ? medianOf(biases) : NaN,
+    });
+  }
+  if (lines.length < 2) return { lines, hardest: null, best: null };
+  const sorted = [...lines].sort((a, b) => a.accuracy - b.accuracy);
+  const hardest = sorted[0]!.accuracy < 0.85 ? sorted[0]! : null;
+  const top = sorted[sorted.length - 1]!;
+  const best = top.accuracy >= 0.85 && top !== hardest ? top : null;
+  return { lines, hardest, best };
 }

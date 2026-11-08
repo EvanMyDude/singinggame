@@ -3,7 +3,7 @@ import { previewNote } from '../../audio/synth';
 import type { VoiceFrame } from '../../audio/pitch/tracker';
 import { foldToOctaveOf } from '../../core/music';
 import { ScoreEngine, THRESHOLDS, gradeFor, multiplierFor, type Judgment, type NoteResult, type Zone } from '../../core/scoring';
-import { lyricWords, transposeSong, type Note, type Song } from '../../core/song';
+import { lyricLines, lyricWords, transposeSong, type Note, type Song } from '../../core/song';
 import type { App, PlayConfig, Route, Screen } from '../app';
 import { fmtInt, h, icon } from '../dom';
 import { Highway, type TrailPt } from '../render/highway';
@@ -413,7 +413,7 @@ export function playScreen(app: App, route: Route): Screen {
   const cues = difficultEntries(song, noteFrom, noteTo);
 
   // ---------- render loop ----------
-  const phrases = buildPhrases(song, noteFrom, noteTo);
+  const phrases = lyricLines(song, noteFrom, noteTo);
   let shownPhrase = -1;
   let phraseSpans: { el: HTMLElement; from: number; to: number }[] = [];
   let raf = 0;
@@ -555,40 +555,6 @@ function lastTrailBefore(trail: readonly TrailPt[], beat: number): TrailPt | nul
     } else hi = mid - 1;
   }
   return ans >= 0 ? trail[ans]! : null;
-}
-
-/** Split the lyric into display lines at punctuation, rests and long phrases. */
-export function buildPhrases(song: Song, from: number, to: number): { noteFrom: number; noteTo: number }[] {
-  const out: { noteFrom: number; noteTo: number }[] = [];
-  let start = from;
-  if (song.notes.some((n) => n.line !== undefined)) {
-    // Authored line breaks (built-in songs).
-    for (let i = from + 1; i < to; i++) {
-      if (song.notes[i]!.line) {
-        out.push({ noteFrom: start, noteTo: i });
-        start = i;
-      }
-    }
-    out.push({ noteFrom: start, noteTo: to });
-    return out;
-  }
-  // Heuristic for imported songs.
-  for (let i = from; i < to; i++) {
-    const n = song.notes[i]!;
-    const next = song.notes[i + 1];
-    // Punctuation ends a line only once it has some length, so lines are not choppy.
-    const punct = /[,.;:!?]$/.test(n.lyric) && (i - start >= 5 || /[.!?]$/.test(n.lyric));
-    const gap = next ? next.start - (n.start + n.beats) >= 1 : true;
-    const long = i - start >= 13;
-    const lastInWindow = i === to - 1;
-    // Do not break inside a word or before a melisma continuation.
-    const midWord = n.lyric.endsWith('-') || (next !== undefined && next.lyric === '');
-    if (lastInWindow || ((punct || gap || long) && !midWord)) {
-      out.push({ noteFrom: start, noteTo: i + 1 });
-      start = i + 1;
-    }
-  }
-  return out;
 }
 
 /**

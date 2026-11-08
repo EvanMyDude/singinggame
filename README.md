@@ -35,7 +35,7 @@ Design notes: [`docs/superpowers/specs/2026-11-08-pitchline-design.md`](docs/sup
 
 - **Pitch detection**: McLeod Pitch Method (normalized square difference function) computed via FFT autocorrelation, on a 2048-sample window every 512 samples (~94 estimates/s, ~0.4 ms each). An AudioWorklet only copies and timestamps mic samples; analysis runs on the main thread so it can never cause audio dropouts. Frames are voiced only when above the sensitivity gate with clarity ≥ 0.65, so silence and breaths are never scored. A 5-point median removes spikes and octave glitches; a One Euro filter smooths the display without lagging note changes.
 - **Songs**: melodies are authored in a compact text format (`C4:1 D4 E4:2 | …`, lyrics one syllable per note, chord symbols) and parsed into beat-timed notes. All audio (guide melody, keys, bass, pad, light drums) is synthesized with Web Audio from the note data, so slowing down never changes pitch.
-- **Scoring**: each frame's error is measured in cents (octave-folded by default). Points accrue continuously along a smooth accuracy curve (≈ 0.87 at 25 cents, 0.42 at 50 cents) and are capped per note at 100 points per beat, so scores are comparable across practice speeds. Notes are judged Perfect ≤ 15 cents, Great ≤ 30, Good ≤ 50, else Off; Missed if less than 30 % was sung. Combos multiply points (×1.5 at 4, ×2 at 8, ×3 at 16). Holding a long note in tune and landing a new note within 120 ms earn bonuses. A ±100 ms boundary tolerance keeps early/late transitions from counting as wrong pitch.
+- **Scoring**: each frame's error is measured in cents (octave-folded by default). Points accrue continuously along a smooth accuracy curve (≈ 0.87 at 25 cents, 0.42 at 50 cents) and are capped per note at 100 points per beat, so scores are comparable across practice speeds. Notes are judged Perfect ≤ 10 cents, Great ≤ 25, Good ≤ 50, else Off (the same bands color the live feedback); Missed if less than 30 % was sung. Combos multiply points (×1.5 at 4, ×2 at 8, ×3 at 16). Holding a long note in tune and landing a new note within 120 ms earn bonuses. A ±100 ms boundary tolerance keeps early/late transitions from counting as wrong pitch.
 - **Latency**: every frame is shifted back by the round-trip latency (calibrated, or the browser's own estimate) before it is compared with the song; the scroll position follows `getOutputTimestamp()` so the playhead matches what you hear.
 
 ## Built-in songs and public-domain status
@@ -45,11 +45,10 @@ Design notes: [`docs/superpowers/specs/2026-11-08-pitchline-design.md`](docs/sup
 | Twinkle, Twinkle, Little Star | "Ah! vous dirai-je, maman", French, published 1761 | Jane Taylor, "The Star", 1806 | Easy |
 | Are You Sleeping? (Frère Jacques) | French traditional, c. 1780 | Traditional English | Easy |
 | Ode to Joy (Joyful, Joyful) | Beethoven, Symphony No. 9, 1824 (hymn form) | Henry van Dyke, 1907 | Easy |
-| When the Saints Go Marching In | Traditional spiritual (first recorded 1923) | Traditional | Medium |
 | Amazing Grace | NEW BRITAIN, 1829 (Excell hymnal form, 1900) | John Newton, 1779 | Medium |
 | Auld Lang Syne | Scottish air, printed 1799 | Robert Burns, 1788 | Harder |
 
-Sources, verification links and transcription choices: [`docs/SONG_SOURCES.md`](docs/SONG_SOURCES.md). *When the Saints* has the thinnest paper trail (a folk song widely accepted as public domain, with no known pre-1931 printing of the exact melody); remove it from `src/core/library.ts` if you want only songs with a dated first publication. No recordings or modern arrangements are used; accompaniment is generated from chord symbols in the browser.
+Sources, verification links and transcription choices: [`docs/SONG_SOURCES.md`](docs/SONG_SOURCES.md). Every built-in song has a dated public-domain first publication for both melody and words. *When the Saints Go Marching In* was in v1 but was removed: it is only "widely accepted" as public domain, with no known pre-1931 printing of the exact melody. No recordings or modern arrangements are used; accompaniment is generated from chord symbols in the browser.
 
 ## Development
 
