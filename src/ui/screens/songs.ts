@@ -164,7 +164,7 @@ export function songsScreen(app: App, route: Route): Screen {
         backing: mode === 'practice' ? mix !== 'guide' : true,
         transpose: t.semitones,
       };
-      app.startSong(config);
+      void app.startSong(config);
     };
 
     detail.replaceChildren(

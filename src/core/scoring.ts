@@ -407,37 +407,59 @@ function medianOf(v: readonly number[]): number {
 
 export interface PitchInsight {
   midi: number;
+  /** Mean accuracy over the occurrences this insight describes (0..1). */
   accuracy: number;
+  /** Median signed cents over those occurrences (NaN if never sung). */
   bias: number;
+  /** Occurrences this insight describes (problem occurrences for "struggled"). */
   count: number;
+  /** All occurrences of this pitch in the attempt. */
+  total: number;
   lyrics: string[];
+  /** Note indices of the described occurrences. */
+  indices: number[];
 }
 
-/** Aggregate results per pitch: which notes were nailed and which went sharp/flat. */
+/** A sung note that was clearly off: wrong pitch, missed, or more than 30 cents away. */
+export function isProblem(r: NoteResult): boolean {
+  return r.judgment === 'off' || r.judgment === 'miss' || r.accuracy < 0.7 || (Number.isFinite(r.biasCents) && Math.abs(r.biasCents) > THRESHOLDS.great);
+}
+
+/**
+ * Per-pitch insights. "Struggled" is built from the problem occurrences only, so a pitch
+ * sung well in one place and flat in another is still reported (with "n of m times").
+ * "Nailed" requires every occurrence of the pitch to be clean.
+ */
 export function pitchInsights(results: readonly NoteResult[]): { nailed: PitchInsight[]; struggled: PitchInsight[] } {
-  const by = new Map<number, { acc: number; w: number; biases: number[]; count: number; lyrics: Set<string> }>();
-  for (const r of results) {
-    const e = by.get(r.midi) ?? { acc: 0, w: 0, biases: [], count: 0, lyrics: new Set<string>() };
-    e.acc += r.accuracy * r.beats;
-    e.w += r.beats;
-    if (Number.isFinite(r.biasCents)) e.biases.push(r.biasCents);
-    e.count++;
-    if (r.lyric) e.lyrics.add(r.lyric.replace(/-$/, '').replace(/[.,;:!?]+$/, ''));
-    by.set(r.midi, e);
+  const by = new Map<number, NoteResult[]>();
+  for (const r of results) by.set(r.midi, [...(by.get(r.midi) ?? []), r]);
+  const describe = (midi: number, occ: NoteResult[], total: number): PitchInsight => {
+    const biases = occ.map((r) => r.biasCents).filter(Number.isFinite);
+    const lyrics = new Set<string>();
+    for (const r of occ) if (r.lyric) lyrics.add(r.lyric.replace(/-$/, '').replace(/[.,;:!?]+$/, ''));
+    return {
+      midi,
+      accuracy: occ.reduce((s, r) => s + r.accuracy, 0) / occ.length,
+      bias: biases.length ? medianOf(biases) : NaN,
+      count: occ.length,
+      total,
+      lyrics: [...lyrics].slice(0, 3),
+      indices: occ.map((r) => r.index),
+    };
+  };
+  const struggled: PitchInsight[] = [];
+  const nailed: PitchInsight[] = [];
+  for (const [midi, occ] of by) {
+    const problems = occ.filter(isProblem);
+    if (problems.length) struggled.push(describe(midi, problems, occ.length));
+    else {
+      const d = describe(midi, occ, occ.length);
+      if (d.accuracy >= 0.85) nailed.push(d);
+    }
   }
-  const all: PitchInsight[] = [...by.entries()].map(([midi, e]) => ({
-    midi,
-    accuracy: e.w ? e.acc / e.w : 0,
-    bias: e.biases.length ? medianOf(e.biases) : NaN,
-    count: e.count,
-    lyrics: [...e.lyrics].slice(0, 3),
-  }));
-  const nailed = all.filter((p) => p.accuracy >= 0.85).sort((a, b) => b.accuracy - a.accuracy).slice(0, 4);
-  const struggled = all
-    .filter((p) => p.accuracy < 0.7 || (Number.isFinite(p.bias) && Math.abs(p.bias) > THRESHOLDS.great))
-    .sort((a, b) => a.accuracy - b.accuracy)
-    .slice(0, 4);
-  return { nailed, struggled };
+  struggled.sort((a, b) => b.count - a.count || a.accuracy - b.accuracy);
+  nailed.sort((a, b) => b.accuracy - a.accuracy || b.count - a.count);
+  return { nailed: nailed.slice(0, 4), struggled: struggled.slice(0, 4) };
 }
 
 /** Section with the lowest beat-weighted accuracy (for "Practice weak section"). */

@@ -142,11 +142,15 @@ export class App {
    * Starts a song, routing through mic setup and the range check first if needed, so the
    * acceptance path (pick song, allow mic, start) works without visiting setup screens.
    */
-  startSong(config: PlayConfig): void {
+  async startSong(config: PlayConfig): Promise<void> {
     const route: Route = { name: 'play', config };
     const needsRange = !this.store.data.range && !this.store.data.onboarded;
     // After a first range check, return to the song so the new key is visible before singing.
     const afterRange: Route = { name: 'songs', selectId: config.songId };
+    if (!this.micReady && !needsRange && (await micPermissionGranted())) {
+      // Returning player: permission already granted, so open the mic straight from Start.
+      await this.openMic();
+    }
     if (!this.micReady) {
       this.go({ name: 'setup', next: needsRange ? { name: 'range', next: afterRange } : route });
       return;
@@ -156,5 +160,15 @@ export class App {
       return;
     }
     this.go(route);
+  }
+}
+
+/** True when the browser reports microphone permission as already granted (Chromium, Safari). */
+async function micPermissionGranted(): Promise<boolean> {
+  try {
+    const status = await navigator.permissions.query({ name: 'microphone' as PermissionName });
+    return status.state === 'granted';
+  } catch {
+    return false; // Firefox does not expose this permission name.
   }
 }

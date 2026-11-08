@@ -244,6 +244,18 @@ describe('ScoreEngine with simulated singers', () => {
     expect(['C', 'D', 'F']).toContain(grade(70)); // struggling
   });
 
+  it('reports a pitch as struggled when only some occurrences go flat, and never as nailed', () => {
+    // Same pitches appear in both halves; the second half is sung 45 cents flat.
+    const frames = simulateSinger(song, t0, spb, fi, { sigmaCents: 3 }).map((f) =>
+      f.time > t0 + 8 * spb ? { ...f, midi: f.midi - 0.45 } : f,
+    );
+    const ins = pitchInsights(play(frames).results);
+    const flatPitches = new Set(song.notes.filter((n) => n.start >= 8).map((n) => n.midi));
+    for (const p of ins.struggled) expect(p.bias).toBeLessThan(-25);
+    expect(ins.struggled.some((p) => flatPitches.has(p.midi) && p.count < p.total)).toBe(true);
+    for (const p of ins.nailed) expect(flatPitches.has(p.midi)).toBe(false);
+  });
+
   it('finds the weakest section', () => {
     const frames = simulateSinger(song, t0, spb, fi, { sigmaCents: 3 }).map((f) =>
       f.time > t0 + 8 * spb ? { ...f, midi: f.midi + 0.7 } : f,

@@ -59,9 +59,9 @@ export function resultsScreen(app: App, route: Route): Screen {
   if (!r.countsTowardBest) {
     bestLine = h('div', { class: 'muted' }, `Practice run (${Math.round(r.config.speed * 100)}% speed) · high scores count full-speed song runs`);
   } else if (r.isNewBest && r.previousBest) {
-    bestLine = h('div', { class: 'chip ok', style: 'font-size:14px' }, `New high score! +${fmtInt(r.score - r.previousBest.score)} over ${fmtInt(r.previousBest.score)}`);
+    bestLine = h('div', { class: 'chip ok', style: 'font-size:14px;align-self:flex-start' }, `New high score! +${fmtInt(r.score - r.previousBest.score)} over ${fmtInt(r.previousBest.score)}`);
   } else if (r.isNewBest) {
-    bestLine = h('div', { class: 'chip ok', style: 'font-size:14px' }, 'First high score set');
+    bestLine = h('div', { class: 'chip ok', style: 'font-size:14px;align-self:flex-start' }, 'First high score set');
   } else {
     const prev = r.previousBest!;
     bestLine = h('div', { class: 'muted' }, `High score ${fmtInt(prev.score)} (${Math.round(prev.accuracy)}%) · ${fmtInt(prev.score - r.score)} to beat it`);
@@ -131,8 +131,8 @@ export function resultsScreen(app: App, route: Route): Screen {
     h(
       'div',
       { class: 'two-col', style: 'margin-top:14px' },
-      h('div', { class: 'card' }, h('div', { class: 'panel-title' }, 'Notes you nailed'), ...(ins.nailed.length ? ins.nailed.map((p) => insightRow(p, nn, true)) : [h('div', { class: 'muted small' }, 'Keep going: no pitch was consistently above 85% yet.')])),
-      h('div', { class: 'card' }, h('div', { class: 'panel-title' }, 'Notes you struggled with'), ...(ins.struggled.length ? ins.struggled.map((p) => insightRow(p, nn, false)) : [h('div', { class: 'muted small' }, 'Nothing stood out. Every pitch was close.')])),
+      h('div', { class: 'card' }, h('div', { class: 'panel-title' }, 'Notes you nailed'), ...(ins.nailed.length ? ins.nailed.map((p) => insightRow(p, nn, true, song)) : [h('div', { class: 'muted small' }, 'No pitch was clean every time yet. Keep going.')])),
+      h('div', { class: 'card' }, h('div', { class: 'panel-title' }, 'Notes you struggled with'), ...(ins.struggled.length ? ins.struggled.map((p) => insightRow(p, nn, false, song)) : [h('div', { class: 'muted small' }, 'Nothing stood out. Every pitch was close.')])),
     ),
     progress.attempts.length >= 2 ? h('div', { class: 'card', style: 'margin-top:14px' }, sparkline(progress.attempts)) : null,
     base && base.pdNote ? h('p', { class: 'faint tiny', style: 'margin-top:18px' }, base.pdNote) : null,
@@ -201,7 +201,7 @@ function timelineRows(song: Song, r: AttemptResult, nn: (m: number) => string): 
   return rows;
 }
 
-function insightRow(p: PitchInsight, nn: (m: number) => string, good: boolean): HTMLElement {
+function insightRow(p: PitchInsight, nn: (m: number) => string, good: boolean, song: Song): HTMLElement {
   const bias = p.bias;
   const dirText = !Number.isFinite(bias)
     ? 'not sung'
@@ -209,11 +209,13 @@ function insightRow(p: PitchInsight, nn: (m: number) => string, good: boolean): 
       ? 'centered'
       : `${Math.round(Math.abs(bias))} cents ${bias > 0 ? 'sharp ↑' : 'flat ↓'}`;
   const color = good ? 'var(--perfect)' : Number.isFinite(bias) && Math.abs(bias) > THRESHOLDS.great ? 'var(--off)' : 'var(--good)';
+  const where = [...new Set(p.indices.map((i) => song.sections.find((s) => i >= s.noteFrom && i < s.noteTo)?.name).filter(Boolean))];
+  const context = [p.lyrics.length ? `on “${p.lyrics.join('”, “')}”` : '', !good && where.length ? `in ${where.slice(0, 2).join(', ')}` : ''].filter(Boolean).join(' ');
   return h(
     'div',
     { class: 'insight' },
     h('span', { class: 'note', style: `color:${color}` }, nn(p.midi)),
-    h('div', { class: 'grow' }, h('div', null, `${Math.round(p.accuracy * 100)}% · ${dirText}`), p.lyrics.length ? h('div', { class: 'faint tiny' }, `on “${p.lyrics.join('”, “')}”`) : null),
-    h('span', { class: 'faint tiny' }, `${p.count}×`),
+    h('div', { class: 'grow' }, h('div', null, `${good ? `${Math.round(p.accuracy * 100)}% · ` : ''}${dirText}`), context ? h('div', { class: 'faint tiny' }, context) : null),
+    h('span', { class: 'faint tiny' }, good ? `${p.total}×` : `${p.count} of ${p.total}`),
   );
 }

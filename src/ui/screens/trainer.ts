@@ -180,6 +180,8 @@ export function trainerScreen(app: App): Screen {
       lockErrs = [];
       singStart = rt.engine.ctx.currentTime;
       tuner.setTarget(target(), fold);
+      // Used by automated tests (synthetic singer) and debugging.
+      window.dispatchEvent(new CustomEvent('pitchline:target', { detail: { midi: target() } }));
       tuner.clear();
       if (cur.targets.length > 1) {
         prompt.textContent = ti === 0 ? 'Sing the first note' : `Now the ${cur.label}`;

@@ -278,17 +278,26 @@ export class Highway {
       }
     };
     let lastXY: [number, number] | null = null;
+    let lastM: number | null = null;
     for (const p of f.trail) {
       if (p.beat < minBeat || p.beat > beat + 0.05) continue;
       if (!Number.isFinite(p.m)) {
         flush();
         run = null;
         lastXY = null;
+        lastM = null;
         continue;
       }
       const x = this.xOf(p.beat, beat);
       const y = clamp(this.yOf(p.m), top - 30, bottom + 30);
       const color = zoneColor(p.zone);
+      if (lastM !== null && Math.abs(p.m - lastM) > 2.5) {
+        // A jump this large within one hop is a note change, not a glide: do not draw a streak.
+        flush();
+        run = null;
+        lastXY = null;
+      }
+      lastM = p.m;
       if (!run || run.color !== color) {
         flush();
         run = { color, pts: lastXY ? [lastXY] : [] };

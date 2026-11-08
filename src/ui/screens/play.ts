@@ -154,6 +154,12 @@ export function playScreen(app: App, route: Route): Screen {
       const ps: PassState = { pass, scorer, done: false };
       passes.push(ps);
       current = ps;
+      lastMult = 1;
+      displayedScore = 0;
+      // Timeline announcement, used by automated tests (a synthetic singer) and debugging.
+      window.dispatchEvent(
+        new CustomEvent('pitchline:pass', { detail: { t0: pass.t0, secPerBeat: p.secPerBeat, fromBeat, notes: windowNotes.map((n) => ({ midi: n.midi, start: n.start, beats: n.beats })) } }),
+      );
       if (pass.index > 0) {
         for (let i = noteFrom; i < noteTo; i++) {
           judgments[i] = undefined;
@@ -178,7 +184,9 @@ export function playScreen(app: App, route: Route): Screen {
     const comp = f.time - latency;
     // Route the frame to the pass whose timeline it belongs to.
     let ps: PassState | null = null;
-    for (const q of passes) if (q.pass.countInStart <= comp) ps = q;
+    // A pass's count-in starts where the previous pass ends; frames within the boundary
+    // tolerance still belong to the previous pass's last note.
+    for (const q of passes) if (q.pass.countInStart + 0.15 <= comp) ps = q;
     if (!ps) return;
     const j = ps.scorer.ingest(f);
     const isCurrent = ps === current;
@@ -206,8 +214,13 @@ export function playScreen(app: App, route: Route): Screen {
         hint = null;
       }
     }
-    for (const r of ps.scorer.advance(f.time)) onNoteResult(ps, r);
-    checkPassDone(ps, f.time);
+    // Advance every unfinished pass, not only the one this frame belongs to: otherwise a
+    // looped pass would never finalize once frames start flowing to the next pass.
+    for (const q of passes) {
+      if (q.done) continue;
+      for (const r of q.scorer.advance(f.time)) onNoteResult(q, r);
+      checkPassDone(q, f.time);
+    }
   };
 
   const onNoteResult = (ps: PassState, r: NoteResult) => {
@@ -405,7 +418,11 @@ export function playScreen(app: App, route: Route): Screen {
       // Reveal the recorded attempt as the playhead passes it.
       for (const r of replay.result.notes) if (song.notes[r.index]!.start + song.notes[r.index]!.beats < beat) judgments[r.index] = r.judgment;
       const last = lastTrailBefore(trail, beat);
-      if (last && Number.isFinite(last.m) && beat - last.beat < 0.15) headOut = { m: last.m, zone: last.zone };
+      if (last && Number.isFinite(last.m) && beat - last.beat < 0.15) {
+        headOut = { m: last.m, zone: last.zone };
+        const at = noteIndexAt(song, beat, noteFrom, noteTo);
+        if (last.zone && beat >= song.notes[at]!.start) liveZones[at] = last.zone;
+      }
     } else if (head && nowMs - head.t < 140) {
       headOut = { m: head.m, zone: head.zone };
     }
