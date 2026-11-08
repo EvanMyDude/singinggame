@@ -62,7 +62,7 @@ export function settingsScreen(app: App): Screen {
   });
 
   const sensVal = h('span', { class: 'val' }, String(sensitivityFromGate(s().gateDb)));
-  const monitorToggle = toggle('Hear my mic', s().monitoring, (v) => set({ monitoring: v }));
+  const monitorToggle = toggle('', s().monitoring, (v) => set({ monitoring: v }));
   const monitorInput = monitorToggle.querySelector('input')!;
   const syncMonitor = () => {
     monitorInput.disabled = !s().headphones;

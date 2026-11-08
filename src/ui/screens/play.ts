@@ -121,6 +121,12 @@ export function playScreen(app: App, route: Route): Screen {
   let countInFrom = fromBeat;
   let overlay: HTMLElement | null = null;
 
+  /** Timeline announcement, used by automated tests (a synthetic singer) and debugging. */
+  const announce = (t0: number, secPerBeat: number, from: number) => {
+    const notes = windowNotes.filter((n) => n.start >= from - 1e-9).map((n) => ({ midi: n.midi, start: n.start, beats: n.beats }));
+    window.dispatchEvent(new CustomEvent('pitchline:pass', { detail: { t0, secPerBeat, fromBeat: from, notes } }));
+  };
+
   const startPlayer = (startBeat: number) => {
     player = new SongPlayer(rt.engine, song, {
       speed: config.speed,
@@ -139,6 +145,7 @@ export function playScreen(app: App, route: Route): Screen {
         // Resuming mid-song: keep the same scorer, re-anchored to the new timeline.
         current.scorer.rebase(pass.t0, startBeat);
         current.pass = pass;
+        announce(pass.t0, p.secPerBeat, startBeat);
         return;
       }
       const scorer = new ScoreEngine(song, {
@@ -156,10 +163,7 @@ export function playScreen(app: App, route: Route): Screen {
       current = ps;
       lastMult = 1;
       displayedScore = 0;
-      // Timeline announcement, used by automated tests (a synthetic singer) and debugging.
-      window.dispatchEvent(
-        new CustomEvent('pitchline:pass', { detail: { t0: pass.t0, secPerBeat: p.secPerBeat, fromBeat, notes: windowNotes.map((n) => ({ midi: n.midi, start: n.start, beats: n.beats })) } }),
-      );
+      announce(pass.t0, p.secPerBeat, fromBeat);
       if (pass.index > 0) {
         for (let i = noteFrom; i < noteTo; i++) {
           judgments[i] = undefined;
