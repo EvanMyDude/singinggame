@@ -17,7 +17,7 @@ Other targets: `make test`, `make typecheck`, `make build` (static files in `dis
 
 ### GitHub Pages
 
-The repo's `index.html` is the Vite *source* entry (it loads `/src/main.ts`), so serving the branch directly gives a blank page. `.github/workflows/pages.yml` builds the site and publishes it to the `gh-pages` branch: `main` at `https://<owner>.github.io/<repo>/` and `live` at `https://<owner>.github.io/<repo>/live/`. One-time setup: **Settings → Pages → Build and deployment → Deploy from a branch → `gh-pages` / `(root)`**. The workflow runs on every push to `main` or `live` (it must exist on the pushed branch) and can be re-run from the Actions tab.
+The repo's `index.html` is the Vite *source* entry (it loads `/src/main.ts`), so serving the branch directly gives a blank page. `.github/workflows/pages.yml` runs the tests, builds the site and deploys `dist/` to Pages on every push to `main` (or on demand from the Actions tab). One-time setup: **Settings → Pages → Build and deployment → Source: GitHub Actions**. The site is then at `https://<owner>.github.io/<repo>/`.
 
 The microphone only works on a secure origin: `http://localhost` during development, or any `https://` host for the built files. Use Chrome, Edge, Firefox or Safari (current versions). **Headphones give the best results**: with speakers the microphone also hears the guide melody.
 
