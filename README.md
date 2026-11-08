@@ -15,6 +15,10 @@ make dev       # http://localhost:5173
 
 Other targets: `make test`, `make typecheck`, `make build` (static files in `dist/`), `make preview`. Run `make help` for the list.
 
+### GitHub Pages
+
+The repo's `index.html` is the Vite *source* entry (it loads `/src/main.ts`), so serving the branch directly gives a blank page. `.github/workflows/pages.yml` builds the site and publishes it to the `gh-pages` branch: `main` at `https://<owner>.github.io/<repo>/` and `live` at `https://<owner>.github.io/<repo>/live/`. One-time setup: **Settings → Pages → Build and deployment → Deploy from a branch → `gh-pages` / `(root)`**. The workflow runs on every push to `main` or `live` (it must exist on the pushed branch) and can be re-run from the Actions tab.
+
 The microphone only works on a secure origin: `http://localhost` during development, or any `https://` host for the built files. Use Chrome, Edge, Firefox or Safari (current versions). **Headphones give the best results**: with speakers the microphone also hears the guide melody.
 
 ## What's in it
@@ -25,6 +29,7 @@ The microphone only works on a secure origin: `http://localhost` during developm
 - **Vocal range check**: sing a comfortable low and high note; every song is then transposed to fit, and the song screen shows *Original key → Comfortable key for you* with manual −/+ override.
 - **Latency calibration**: clap or say "ta" on 8 clicks; the measured round-trip delay is removed before scoring.
 - **Results**: score, grade, pitch accuracy, timing accuracy, best streak, Perfect/Great/Good/Off/Missed counts, a note-by-note timeline per section with sharp/flat arrows, notes you nailed vs. struggled with, and an accuracy trend across attempts. Buttons: **Try Again**, **Replay Song** (watch your recorded run against the guide), **Practice Weak Section** (opens the weakest section at 75 %, looping).
+- **Pitch Monitor**: a free-running real-time pitch graph with note, Hz and cents readout, colored by how centered you are on the nearest note. Start/Stop (Stop releases the mic), Hold, Clear, Zoom, Range, Reset, Sensitivity.
 - **MIDI import**: load a `.mid`/`.kar` file; the most melody-like track becomes a singable song (karaoke lyrics included when present). Stored only in this browser.
 
 Keyboard during play: `Esc`/`Space` pause, `H` hear target note, `G`/`B` toggle melody/band in practice.

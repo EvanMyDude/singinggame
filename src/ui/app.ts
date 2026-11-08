@@ -15,6 +15,7 @@ export type Route =
   | { name: 'play'; config: PlayConfig }
   | { name: 'results'; result: import('./screens/results').AttemptResult }
   | { name: 'trainer' }
+  | { name: 'monitor' }
   | { name: 'settings' };
 
 export interface PlayConfig {

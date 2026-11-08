@@ -60,6 +60,7 @@ export function homeScreen(app: App): Screen {
       modeCard('play', 'Sing the Song', 'Full songs with backing band and guide melody. Earn points, build combos, beat your best.', () => app.go({ name: 'songs' })),
       modeCard('practice', 'Practice Section', 'Loop a tricky phrase at 75 % or 50 % speed. Hear the target note whenever you need it.', () => app.go({ name: 'songs' }), true),
       modeCard('trainer', 'Pitch Trainer', 'Short single notes and intervals with instant feedback. Lock each one in to score.', () => app.go({ name: 'trainer' }), true),
+      modeCard('monitor', 'Pitch Monitor', 'A live pitch graph of whatever you sing, with note, Hz and cents. No song, no score.', () => app.go({ name: 'monitor' }), true),
     ),
     h(
       'p',
@@ -73,7 +74,7 @@ export function homeScreen(app: App): Screen {
   return { el, destroy: wave.stop };
 }
 
-function modeCard(ic: 'play' | 'practice' | 'trainer', title: string, text: string, onclick: () => void, alt = false): HTMLElement {
+function modeCard(ic: 'play' | 'practice' | 'trainer' | 'monitor', title: string, text: string, onclick: () => void, alt = false): HTMLElement {
   return h('button', { class: `mode-card ${alt ? 'alt' : ''}`, onclick }, icon(ic), h('h3', null, title), h('span', { class: 'muted small' }, text));
 }
 

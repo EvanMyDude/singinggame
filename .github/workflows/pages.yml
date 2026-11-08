@@ -1,0 +1,58 @@
+# Builds the site and publishes it to the gh-pages branch:
+#   https://<owner>.github.io/<repo>/        <- main
+#   https://<owner>.github.io/<repo>/live/   <- live
+# One-time setup: Settings > Pages > Build and deployment > Source "Deploy from a branch",
+# branch "gh-pages", folder "/ (root)".
+name: Publish site
+
+on:
+  push:
+    branches: [main, live]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: publish-site
+  cancel-in-progress: true
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          path: main
+      - name: Check out live
+        uses: actions/checkout@v4
+        with:
+          ref: live
+          path: live
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Build main
+        working-directory: main
+        run: npm ci && npm run build
+      - name: Build live
+        working-directory: live
+        run: npm ci && npm run build
+      - name: Assemble site
+        run: |
+          mkdir -p site/live
+          cp -r main/dist/. site/
+          cp -r live/dist/. site/live/
+          touch site/.nojekyll
+      - name: Publish to gh-pages
+        working-directory: site
+        env:
+          TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          git init -q -b gh-pages
+          git add -A
+          git -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
+            commit -q -m "Publish ${GITHUB_SHA::7} from ${GITHUB_REF_NAME}"
+          git push -f "https://x-access-token:${TOKEN}@github.com/${GITHUB_REPOSITORY}.git" gh-pages

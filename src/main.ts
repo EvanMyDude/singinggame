@@ -4,6 +4,7 @@ import './styles.css';
 import { App } from './ui/app';
 import { homeScreen } from './ui/screens/home';
 import { latencyScreen } from './ui/screens/latency';
+import { monitorScreen } from './ui/screens/monitor';
 import { playScreen } from './ui/screens/play';
 import { rangeScreen } from './ui/screens/range';
 import { resultsScreen } from './ui/screens/results';
@@ -22,6 +23,7 @@ app.register('songs', songsScreen);
 app.register('play', playScreen);
 app.register('results', resultsScreen);
 app.register('trainer', trainerScreen);
+app.register('monitor', monitorScreen);
 app.register('settings', settingsScreen);
 app.go({ name: 'home' });
 
