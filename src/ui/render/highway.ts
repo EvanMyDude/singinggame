@@ -25,6 +25,8 @@ export interface HighwayFrame {
   trail: readonly TrailPt[];
   head: { m: number; zone: Zone | null } | null;
   hint: 'sharp' | 'flat' | null;
+  /** Notes with a hard entry (big leap or after a rest): drawn with a "Hear note" cue. */
+  cues: ReadonlySet<number>;
   /** Note index to flash (Hear Target Note). */
   flashNote: number;
   flashUntil: number;
@@ -234,6 +236,22 @@ export class Highway {
       roundRect(g, x0 + 3, y - barH / 2 + 2, Math.max(0, width - 6), Math.max(2, barH * 0.28), barH * 0.14);
       g.fill();
       g.globalAlpha = 1;
+      if (inWindow && f.cues.has(n.index) && x0 > px + 4 && x0 < w - 20) {
+        // Cue chip above difficult entries: press H (or the button) to hear the note first.
+        const cy = y - barH / 2 - 22;
+        g.globalAlpha = Math.min(1, (x0 - px) / 60);
+        g.fillStyle = 'rgba(160,140,255,0.18)';
+        roundRect(g, x0, cy - 9, 34, 18, 9);
+        g.fill();
+        g.fillStyle = COLORS.accent2;
+        g.font = '700 11px Inter Variable, system-ui, sans-serif';
+        g.textAlign = 'left';
+        g.textBaseline = 'middle';
+        g.fillText('H ♪', x0 + 7, cy + 0.5);
+        g.textAlign = 'center';
+        g.textBaseline = 'top';
+        g.globalAlpha = 1;
+      }
       if (n.lyric && inWindow) {
         g.font = `${isActive ? 700 : 600} 13px Inter Variable, system-ui, sans-serif`;
         g.fillStyle = isActive ? COLORS.text : past ? COLORS.faint : COLORS.dim;

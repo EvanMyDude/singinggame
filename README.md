@@ -20,7 +20,7 @@ The microphone only works on a secure origin: `http://localhost` during developm
 ## What's in it
 
 - **Sing the Song**: full songs with a synthesized backing band and guide melody, count-in, live scoring, combos and high scores.
-- **Practice Section**: loop one section at 100 %, 75 % or 50 % speed; choose band + melody, melody only, or band only; press **H** (or the button) to hear the next target note. The first note of the section is cued during each count-in.
+- **Practice Section**: loop one section at 100 %, 75 % or 50 % speed; choose band + melody, melody only, or band only; press **H** (or the button) to hear the next target note. Hard entries (big leaps, re-entries after a rest) carry an **H ♪** cue as they approach, and the first note of the section is played during each count-in.
 - **Pitch Trainer**: single notes or intervals (three difficulty sets, up/down/both). Hold each note inside the green band until it locks.
 - **Vocal range check**: sing a comfortable low and high note; every song is then transposed to fit, and the song screen shows *Original key → Comfortable key for you* with manual −/+ override.
 - **Latency calibration**: clap or say "ta" on 8 clicks; the measured round-trip delay is removed before scoring.
@@ -40,11 +40,16 @@ Design notes: [`docs/superpowers/specs/2026-11-08-pitchline-design.md`](docs/sup
 
 ## Built-in songs and public-domain status
 
-| Song | Melody | Lyrics used |
-| --- | --- | --- |
-| Twinkle, Twinkle, Little Star | "Ah! vous dirai-je, maman", French, published 1761 | Jane Taylor, "The Star", 1806 |
+| Song | Melody | Lyrics used | Level |
+| --- | --- | --- | --- |
+| Twinkle, Twinkle, Little Star | "Ah! vous dirai-je, maman", French, published 1761 | Jane Taylor, "The Star", 1806 | Easy |
+| Are You Sleeping? (Frère Jacques) | French traditional, c. 1780 | Traditional English | Easy |
+| Ode to Joy (Joyful, Joyful) | Beethoven, Symphony No. 9, 1824 (hymn form) | Henry van Dyke, 1907 | Easy |
+| When the Saints Go Marching In | Traditional spiritual (first recorded 1923) | Traditional | Medium |
+| Amazing Grace | NEW BRITAIN, 1829 (Excell hymnal form, 1900) | John Newton, 1779 | Medium |
+| Auld Lang Syne | Scottish air, printed 1799 | Robert Burns, 1788 | Harder |
 
-Details and sources: [`docs/SONG_SOURCES.md`](docs/SONG_SOURCES.md). No recordings or modern arrangements are used; accompaniment is generated from chord symbols in the browser.
+Sources, verification links and transcription choices: [`docs/SONG_SOURCES.md`](docs/SONG_SOURCES.md). *When the Saints* has the thinnest paper trail (a folk song widely accepted as public domain, with no known pre-1931 printing of the exact melody); remove it from `src/core/library.ts` if you want only songs with a dated first publication. No recordings or modern arrangements are used; accompaniment is generated from chord symbols in the browser.
 
 ## Development
 

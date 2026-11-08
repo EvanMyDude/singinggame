@@ -410,6 +410,8 @@ export function playScreen(app: App, route: Route): Screen {
     toast(config.loop ? 'Practice complete' : 'Song complete');
   };
 
+  const cues = difficultEntries(song, noteFrom, noteTo);
+
   // ---------- render loop ----------
   const phrases = buildPhrases(song, noteFrom, noteTo);
   let shownPhrase = -1;
@@ -447,6 +449,7 @@ export function playScreen(app: App, route: Route): Screen {
       trail,
       head: headOut,
       hint: headOut ? hint : null,
+      cues,
       flashNote,
       flashUntil,
       now: nowMs,
@@ -558,10 +561,23 @@ function lastTrailBefore(trail: readonly TrailPt[], beat: number): TrailPt | nul
 export function buildPhrases(song: Song, from: number, to: number): { noteFrom: number; noteTo: number }[] {
   const out: { noteFrom: number; noteTo: number }[] = [];
   let start = from;
+  if (song.notes.some((n) => n.line !== undefined)) {
+    // Authored line breaks (built-in songs).
+    for (let i = from + 1; i < to; i++) {
+      if (song.notes[i]!.line) {
+        out.push({ noteFrom: start, noteTo: i });
+        start = i;
+      }
+    }
+    out.push({ noteFrom: start, noteTo: to });
+    return out;
+  }
+  // Heuristic for imported songs.
   for (let i = from; i < to; i++) {
     const n = song.notes[i]!;
     const next = song.notes[i + 1];
-    const punct = /[,.;:!?]$/.test(n.lyric);
+    // Punctuation ends a line only once it has some length, so lines are not choppy.
+    const punct = /[,.;:!?]$/.test(n.lyric) && (i - start >= 5 || /[.!?]$/.test(n.lyric));
     const gap = next ? next.start - (n.start + n.beats) >= 1 : true;
     const long = i - start >= 13;
     const lastInWindow = i === to - 1;
@@ -571,6 +587,22 @@ export function buildPhrases(song: Song, from: number, to: number): { noteFrom: 
       out.push({ noteFrom: start, noteTo: i + 1 });
       start = i + 1;
     }
+  }
+  return out;
+}
+
+/**
+ * Notes that are hard to find by ear: reached by a leap of a fourth or more, or the first
+ * note after a rest of 1.5 beats or more (re-entries). The first note is cued by the count-in.
+ */
+export function difficultEntries(song: Song, from: number, to: number): Set<number> {
+  const out = new Set<number>();
+  for (let i = from + 1; i < to; i++) {
+    const n = song.notes[i]!;
+    const prev = song.notes[i - 1]!;
+    const leap = Math.abs(n.midi - prev.midi) >= 5;
+    const reentry = n.start - (prev.start + prev.beats) >= 1.5;
+    if (leap || reentry) out.add(i);
   }
   return out;
 }

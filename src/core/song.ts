@@ -30,14 +30,19 @@ export interface SongSource {
   melody: string;
   /**
    * One token per sung note. A token ending in `-` joins the next syllable into one word.
-   * `~` continues the previous syllable (melisma).
+   * `~` continues the previous syllable (melisma). `/` (not a note) starts a new display line.
    */
   lyrics?: string;
   /** `Root[quality]:beats` tokens (`C`, `Am`, `G7`, `Fmaj7`, `Em7`, `Bdim`, `Dsus4`, `N`). */
   chords?: string;
-  /** Named sections by 1-based bar numbers, inclusive. */
-  sections?: { name: string; from: number; to: number }[];
+  /**
+   * Named practice sections, by 1-based bar numbers (inclusive) or, for phrases that start
+   * on a pickup, by beat range `[start, end)`.
+   */
+  sections?: SectionSource[];
 }
+
+export type SectionSource = { name: string; from: number; to: number } | { name: string; beats: [number, number] };
 
 export interface Note {
   index: number;
@@ -46,6 +51,8 @@ export interface Note {
   beats: number;
   /** Syllable as authored (may end in "-"), "" for melisma continuation. */
   lyric: string;
+  /** True when an authored lyric line starts at this note. */
+  line?: boolean;
 }
 
 export interface Chord {
@@ -152,16 +159,24 @@ export function parseChords(src: string, beatsPerBar: number): Chord[] {
 export function buildSong(src: SongSource): Song {
   const events = parseMelody(src.melody, src.beatsPerBar);
   const sung = events.filter((e) => e.midi !== null);
-  const lyricTokens = src.lyrics ? src.lyrics.trim().split(/\s+/) : [];
+  const rawTokens = src.lyrics ? src.lyrics.trim().split(/\s+/) : [];
+  const lyricTokens: string[] = [];
+  const lineStarts = new Set<number>();
+  for (const t of rawTokens) {
+    if (t === '/') lineStarts.add(lyricTokens.length);
+    else lyricTokens.push(t);
+  }
   if (src.lyrics && lyricTokens.length !== sung.length) {
     throw new Error(`${src.id}: ${lyricTokens.length} lyric tokens for ${sung.length} notes`);
   }
+  const explicitLines = lineStarts.size > 0;
   const notes: Note[] = sung.map((e, i) => ({
     index: i,
     midi: e.midi!,
     start: e.start,
     beats: e.beats,
     lyric: lyricTokens[i] === '~' ? '' : (lyricTokens[i] ?? ''),
+    ...(explicitLines ? { line: i === 0 || lineStarts.has(i) } : {}),
   }));
   const chords = src.chords ? parseChords(src.chords, src.beatsPerBar) : [];
   const tonicPc = TONIC_PC[src.tonic];
@@ -194,7 +209,7 @@ export function songFromNotes(
   meta: SongMeta,
   notes: Note[],
   chords: Chord[],
-  sectionsSrc?: { name: string; from: number; to: number }[],
+  sectionsSrc?: SectionSource[],
   melodyEnd?: number,
 ): Song {
   if (!notes.length) throw new Error(`${meta.id}: no notes`);
@@ -202,10 +217,10 @@ export function songFromNotes(
   const end = Math.max(melodyEnd ?? 0, lastNote.start + lastNote.beats);
   const totalBeats = Math.ceil(end / meta.beatsPerBar - 1e-9) * meta.beatsPerBar;
   const bars = totalBeats / meta.beatsPerBar;
-  const src = sectionsSrc ?? [{ name: 'Song', from: 1, to: bars }];
+  const src: SectionSource[] = sectionsSrc ?? [{ name: 'Song', from: 1, to: bars }];
   const sections: Section[] = src.map((s) => {
-    const startBeat = (s.from - 1) * meta.beatsPerBar;
-    const endBeat = s.to * meta.beatsPerBar;
+    const startBeat = 'beats' in s ? s.beats[0] : (s.from - 1) * meta.beatsPerBar;
+    const endBeat = 'beats' in s ? s.beats[1] : s.to * meta.beatsPerBar;
     let noteFrom = notes.findIndex((n) => n.start >= startBeat - 1e-9);
     if (noteFrom < 0) noteFrom = notes.length;
     let noteTo = notes.findIndex((n) => n.start >= endBeat - 1e-9);
