@@ -350,14 +350,21 @@ export function playScreen(app: App, route: Route): Screen {
   document.addEventListener('visibilitychange', onVis);
 
   // ---------- finish ----------
+  let finishing = false;
   const finish = async () => {
-    if (ended) return;
-    ended = true;
+    if (ended || finishing) return;
+    finishing = true;
     player?.stop(0.3);
     if (replay) {
+      ended = true;
       app.go({ name: 'results', result: replay.result });
       return;
     }
+    // Voice frames trail the audio by the round-trip latency: keep listening that long so
+    // the last note is not cut short, then score.
+    await new Promise((r) => setTimeout(r, (latency + 0.25) * 1000));
+    if (ended) return;
+    ended = true;
     // Prefer the last completed pass; otherwise score what we have.
     let ps = [...passes].reverse().find((p) => p.done) ?? current;
     if (!ps) {

@@ -203,7 +203,7 @@ export function songsScreen(app: App, route: Route): Screen {
               h('div', null, h('div', { class: 'hud-label' }, 'Plays'), h('div', { class: 'num', style: 'font-size:28px;font-weight:650' }, String(p.plays))),
             )
           : h('div', { class: 'muted small' }, 'No full-speed runs yet. Your high score and accuracy trend will show here.'),
-        p.attempts.length >= 2 ? sparkline(p.attempts) : null,
+        p.attempts.filter((a) => a.mode === 'sing' && a.speed === 1).length >= 2 ? sparkline(p.attempts.filter((a) => a.mode === 'sing' && a.speed === 1)) : null,
       ),
     );
   };
@@ -255,7 +255,7 @@ export function sparkline(attempts: AttemptRecord[]): HTMLElement {
   const ys = (a: number) => hh - 4 - (Math.max(0, Math.min(100, a)) / 100) * (hh - 8);
   const d = pts.map((p, i) => `${i ? 'L' : 'M'}${xs(i).toFixed(1)},${ys(p.accuracy).toFixed(1)}`).join(' ');
   const last = pts[pts.length - 1]!;
-  const wrap = h('div', null, h('div', { class: 'hud-label', style: 'margin-bottom:4px' }, `Accuracy, last ${pts.length} attempts`));
+  const wrap = h('div', null, h('div', { class: 'hud-label', style: 'margin-bottom:4px' }, `Accuracy, last ${pts.length} full runs`));
   wrap.insertAdjacentHTML(
     'beforeend',
     `<svg class="spark" viewBox="0 0 ${w} ${hh}" preserveAspectRatio="none" role="img" aria-label="Accuracy trend"><path d="${d}" fill="none" stroke="#5ee0ff" stroke-width="2" vector-effect="non-scaling-stroke"/></svg>`,

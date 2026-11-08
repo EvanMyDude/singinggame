@@ -42,6 +42,7 @@ export function resultsScreen(app: App, route: Route): Screen {
   const flats = keyPrefersFlats(song.tonicPc, song.mode);
   const nn = (m: number) => noteNameWithOctave(m, flats);
   const progress = app.store.progress(r.config.songId);
+  const fullRuns = progress.attempts.filter((a) => a.mode === 'sing' && a.speed === 1);
   const base = app.songById(r.config.songId);
 
   const scoreEl = h('div', { class: 'score-line' }, '0');
@@ -80,6 +81,18 @@ export function resultsScreen(app: App, route: Route): Screen {
     app.go({ name: 'play', config: { ...r.config, mode: 'practice', section: weakIdx, speed: 0.75, loop: true, guide: true, backing: true } });
 
   const ins = pitchInsights(r.notes);
+  // Consistently late entries usually mean uncompensated audio latency (e.g. Bluetooth).
+  const onsets = r.notes.map((n) => n.onset).filter((o): o is number => o !== null).sort((a, b) => a - b);
+  const medianOnset = onsets.length >= 5 ? onsets[onsets.length >> 1]! : 0;
+  const latencyHint =
+    medianOnset > 0.12 && r.timing < 80
+      ? h(
+          'div',
+          { class: 'notice warn row', style: 'margin-top:14px' },
+          h('span', { class: 'grow' }, `Your notes started about ${Math.round(medianOnset * 1000)} ms late on average. If that felt on time to you, your audio setup has extra delay; calibrating removes it from scoring.`),
+          h('button', { class: 'btn', onclick: () => app.go({ name: 'latency', next: { name: 'songs', selectId: r.config.songId } }) }, 'Calibrate latency'),
+        )
+      : null;
   const total = r.notes.length;
   const hit = r.counts.perfect + r.counts.great + r.counts.good;
 
@@ -107,6 +120,7 @@ export function resultsScreen(app: App, route: Route): Screen {
       stat('Best streak', String(r.bestStreak)),
       stat('Notes hit', `${hit}/${total}`),
     ),
+    latencyHint,
     h(
       'div',
       { class: 'row', style: 'margin-top:12px;gap:8px' },
@@ -134,7 +148,7 @@ export function resultsScreen(app: App, route: Route): Screen {
       h('div', { class: 'card' }, h('div', { class: 'panel-title' }, 'Notes you nailed'), ...(ins.nailed.length ? ins.nailed.map((p) => insightRow(p, nn, true, song)) : [h('div', { class: 'muted small' }, 'No pitch was clean every time yet. Keep going.')])),
       h('div', { class: 'card' }, h('div', { class: 'panel-title' }, 'Notes you struggled with'), ...(ins.struggled.length ? ins.struggled.map((p) => insightRow(p, nn, false, song)) : [h('div', { class: 'muted small' }, 'Nothing stood out. Every pitch was close.')])),
     ),
-    progress.attempts.length >= 2 ? h('div', { class: 'card', style: 'margin-top:14px' }, sparkline(progress.attempts)) : null,
+    fullRuns.length >= 2 ? h('div', { class: 'card', style: 'margin-top:14px' }, sparkline(fullRuns)) : null,
     base && base.pdNote ? h('p', { class: 'faint tiny', style: 'margin-top:18px' }, base.pdNote) : null,
   );
 
