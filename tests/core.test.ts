@@ -1,7 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { arrange, countIn, voiceChord } from '../src/core/arrange';
 import { centsError, hzToMidi, keyName, midiToHz, noteNameWithOctave, parseNote } from '../src/core/music';
-import { chooseTransposition, voiceTypeFor } from '../src/core/range';
 import {
   ScoreEngine,
   frameAccuracy,
@@ -14,23 +12,20 @@ import {
   zoneFor,
   type ScoreFrame,
 } from '../src/core/scoring';
-import { buildSong, lyricWords, parseChords, parseMelody, transposeSong, type SongSource } from '../src/core/song';
+import { buildSong, lyricWords, parseMelody, type SongSource } from '../src/core/song';
 import { simulateSinger } from './helpers/singer';
 
 const TEST_SONG: SongSource = {
   id: 'test',
   title: 'Test',
   credit: 'test',
-  pdNote: 'test',
   bpm: 100,
   beatsPerBar: 4,
   tonic: 'C',
   mode: 'major',
   difficulty: 1,
-  style: 'hymn',
   melody: 'C4:1 C4 G4 G4 | A4 A4 G4:2 | F4:1 F4 E4 E4 | D4 D4 C4:2',
   lyrics: 'Twin- kle twin- kle lit- tle star, How I won- der what you are.',
-  chords: 'C:2 C:2 | F:2 C:2 | F:2 C:2 | G:2 C:2',
   sections: [
     { name: 'A', from: 1, to: 2 },
     { name: 'B', from: 3, to: 4 },
@@ -64,16 +59,6 @@ describe('song format', () => {
     expect(ev[3]!.midi).toBeNull();
     expect(() => parseMelody('C4:1 D4 | E4', 4)).toThrow(/bar/);
   });
-  it('parses chords', () => {
-    const c = parseChords('C:2 Am:1 D7:1 | Gsus4:2 G:2', 4);
-    expect(c.map((x) => [x.root, x.quality])).toEqual([
-      [0, 'maj'],
-      [9, 'min'],
-      [2, '7'],
-      [7, 'sus4'],
-      [7, 'maj'],
-    ]);
-  });
   it('builds a song with lyrics, sections and range', () => {
     const s = buildSong(TEST_SONG);
     expect(s.notes).toHaveLength(14);
@@ -85,55 +70,6 @@ describe('song format', () => {
   });
   it('rejects mismatched lyric counts', () => {
     expect(() => buildSong({ ...TEST_SONG, lyrics: 'too few' })).toThrow(/lyric/);
-  });
-  it('transposes melody, chords and key', () => {
-    const s = transposeSong(buildSong(TEST_SONG), -3);
-    expect(s.notes[0]!.midi).toBe(57);
-    expect(s.tonicPc).toBe(9);
-    expect(s.chords[2]!.root).toBe(2);
-    expect(s.high).toBe(66);
-  });
-});
-
-describe('range fitting', () => {
-  const song = buildSong(TEST_SONG); // C4..A4, tessitura ~ E4
-  it('keeps the original key when it already sits well', () => {
-    const r = chooseTransposition(song, { low: 57, high: 74 });
-    expect(r).toMatchObject({ semitones: 0, keptOriginal: true });
-  });
-  it('moves a song down into a low voice and keeps it in range', () => {
-    const r = chooseTransposition(song, { low: 43, high: 60 });
-    expect(r.maxOutside).toBe(0);
-    expect(song.low + r.semitones).toBeGreaterThanOrEqual(43);
-    expect(song.high + r.semitones).toBeLessThanOrEqual(60);
-  });
-  it('compromises sensibly when the range is narrower than the song', () => {
-    const r = chooseTransposition(song, { low: 50, high: 56 });
-    expect(r.maxOutside).toBeLessThanOrEqual(2);
-  });
-  it('labels voice types roughly', () => {
-    expect(voiceTypeFor({ low: 43, high: 60 })).toBe('Bass');
-    expect(voiceTypeFor({ low: 60, high: 79 })).toBe('Soprano');
-  });
-});
-
-describe('arrangement', () => {
-  it('voices chords in the keys register with smooth voice leading', () => {
-    const c = voiceChord(0, 'maj', 62);
-    expect(c.every((m) => m >= 53 && m <= 72)).toBe(true);
-    expect(new Set(c.map((m) => m % 12))).toEqual(new Set([0, 4, 7]));
-  });
-  it('produces bass, keys and drums within the song length', () => {
-    const s = buildSong(TEST_SONG);
-    const a = arrange(s);
-    expect(a.tones.some((t) => t.part === 'bass')).toBe(true);
-    expect(a.tones.some((t) => t.part === 'keys')).toBe(true);
-    expect(a.tones.every((t) => t.beat >= 0 && t.beat < s.totalBeats)).toBe(true);
-    expect(a.drums.length).toBeGreaterThan(0);
-  });
-  it('counts in one bar and through pickup rests', () => {
-    const s = buildSong({ ...TEST_SONG, beatsPerBar: 3, melody: 'R:2 C4:1 | D4:3', lyrics: 'a b', chords: 'N:2 C:1 | C:3', sections: undefined });
-    expect(countIn(s).map((c) => c.beat)).toEqual([-3, -2, -1, 0, 1]);
   });
 });
 

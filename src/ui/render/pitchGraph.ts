@@ -1,5 +1,4 @@
 import { noteNameWithOctave } from '../../core/music';
-import type { VocalRange } from '../../core/range';
 import { zoneFor } from '../../core/scoring';
 import { COLORS, fitCanvas, zoneColor } from './colors';
 
@@ -20,7 +19,7 @@ export const MAX_MIDI = 96; // C7
 export const SPAN_STEPS = [12, 18, 24, 30, 36, 48];
 
 /** Initial view: the singer's range with a little air, or C2 to C5. */
-export function defaultView(range: VocalRange | null): GraphView {
+export function defaultView(range: { low: number; high: number } | null): GraphView {
   if (!range) return { low: 36, high: 72 };
   const low = Math.floor(range.low) - 5;
   const high = Math.ceil(range.high) + 5;

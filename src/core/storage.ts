@@ -1,25 +1,29 @@
-import type { VocalRange } from './range';
-import type { Song } from './song';
-
 /**
  * Local-only persistence. Everything is small JSON, so localStorage is the right tool; all
- * access is wrapped so private windows or blocked storage degrade to in-memory state.
+ * access is wrapped so private windows or blocked storage degrade to in-memory state. Song
+ * files live in IndexedDB (core/idb.ts, core/songpack.ts).
  */
+
+export type Speed = 0.5 | 0.75 | 1;
+export const SPEEDS: Speed[] = [0.5, 0.75, 1];
 
 export interface Settings {
   deviceId: string | null;
   headphones: boolean;
   /** Level gate in dBFS: quieter frames count as silence. */
   gateDb: number;
-  backingVol: number;
-  melodyVol: number;
-  clickVol: number;
+  /** Music (instrumental / reference) volume 0..1. */
+  musicVol: number;
   monitoring: boolean;
   monitorVol: number;
   /** Calibrated round-trip latency in ms, or null to use the browser's estimate. */
   latencyMs: number | null;
   foldOctaves: boolean;
   showNoteNames: boolean;
+  /** Preferred practice speed. */
+  speed: Speed;
+  /** Reference vocal on by default when entering a session. */
+  referenceVocal: boolean;
 }
 
 export interface AttemptRecord {
@@ -37,44 +41,36 @@ export interface SongProgress {
   best: AttemptRecord | null;
   attempts: AttemptRecord[];
   plays: number;
-  /** User override of the automatic transposition, in semitones from the written key. */
-  transpose: number | null;
-}
-
-export interface TrainerBest {
-  score: number;
-  date: number;
 }
 
 export interface SaveData {
-  version: 1;
+  version: 2;
   settings: Settings;
-  range: VocalRange | null;
-  rangeSource: 'measured' | 'preset' | null;
-  onboarded: boolean;
   progress: Record<string, SongProgress>;
-  trainer: Record<string, TrainerBest>;
+  /** Last playback position per song (s), for "resume where you left off". */
+  lastPosition: Record<string, number>;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
   deviceId: null,
   headphones: true,
   gateDb: -48,
-  backingVol: 0.7,
-  melodyVol: 0.75,
-  clickVol: 0.6,
+  musicVol: 0.8,
   monitoring: false,
   monitorVol: 0.5,
   latencyMs: null,
   foldOctaves: true,
   showNoteNames: false,
+  speed: 1,
+  referenceVocal: false,
 };
 
-const KEY = 'pitchline:v1';
-const IMPORTS_KEY = 'pitchline:imports:v1';
+const KEY = 'pitchhero:v2';
+const LEGACY_KEYS = ['pitchline:v1', 'pitchline:imports:v1'];
+export const WARMUP_SESSION_KEY = 'pitchhero:warmupOffered';
 
 function emptySave(): SaveData {
-  return { version: 1, settings: { ...DEFAULT_SETTINGS }, range: null, rangeSource: null, onboarded: false, progress: {}, trainer: {} };
+  return { version: 2, settings: { ...DEFAULT_SETTINGS }, progress: {}, lastPosition: {} };
 }
 
 function readJSON<T>(key: string): T | null {
@@ -95,6 +91,28 @@ function writeJSON(key: string, value: unknown): boolean {
   }
 }
 
+function isSpeed(v: unknown): v is Speed {
+  return v === 0.5 || v === 0.75 || v === 1;
+}
+
+/** Carry microphone, latency and display settings over from the Pitchline save. */
+function migrateLegacy(): Partial<Settings> | null {
+  const old = readJSON<{ version?: number; settings?: Record<string, unknown> }>('pitchline:v1');
+  if (!old || old.version !== 1 || !old.settings) return null;
+  const s = old.settings;
+  const out: Partial<Settings> = {};
+  if (typeof s.deviceId === 'string' || s.deviceId === null) out.deviceId = s.deviceId as string | null;
+  if (typeof s.headphones === 'boolean') out.headphones = s.headphones;
+  if (typeof s.gateDb === 'number') out.gateDb = s.gateDb;
+  if (typeof s.backingVol === 'number') out.musicVol = s.backingVol;
+  if (typeof s.monitoring === 'boolean') out.monitoring = s.monitoring;
+  if (typeof s.monitorVol === 'number') out.monitorVol = s.monitorVol;
+  if (typeof s.latencyMs === 'number' || s.latencyMs === null) out.latencyMs = s.latencyMs as number | null;
+  if (typeof s.foldOctaves === 'boolean') out.foldOctaves = s.foldOctaves;
+  if (typeof s.showNoteNames === 'boolean') out.showNoteNames = s.showNoteNames;
+  return out;
+}
+
 export class Store {
   data: SaveData;
   private listeners = new Set<() => void>();
@@ -102,15 +120,24 @@ export class Store {
   constructor() {
     const loaded = readJSON<Partial<SaveData>>(KEY);
     const base = emptySave();
-    this.data = loaded && loaded.version === 1
-      ? {
-          ...base,
-          ...loaded,
-          settings: { ...DEFAULT_SETTINGS, ...(loaded.settings ?? {}) },
-          progress: loaded.progress ?? {},
-          trainer: loaded.trainer ?? {},
+    if (loaded && loaded.version === 2) {
+      const settings = { ...DEFAULT_SETTINGS, ...(loaded.settings ?? {}) };
+      if (!isSpeed(settings.speed)) settings.speed = 1;
+      this.data = { ...base, ...loaded, settings, progress: loaded.progress ?? {}, lastPosition: loaded.lastPosition ?? {} };
+    } else {
+      const legacy = migrateLegacy();
+      this.data = legacy ? { ...base, settings: { ...DEFAULT_SETTINGS, ...legacy } } : base;
+      if (legacy) {
+        this.save();
+        for (const k of LEGACY_KEYS) {
+          try {
+            localStorage.removeItem(k);
+          } catch {
+            /* ignore */
+          }
         }
-      : base;
+      }
+    }
   }
 
   get settings(): Settings {
@@ -122,25 +149,8 @@ export class Store {
     this.save();
   }
 
-  setRange(range: VocalRange | null, source: 'measured' | 'preset' | null): void {
-    this.data.range = range;
-    this.data.rangeSource = source;
-    this.save();
-  }
-
-  setOnboarded(): void {
-    this.data.onboarded = true;
-    this.save();
-  }
-
   progress(songId: string): SongProgress {
-    return this.data.progress[songId] ?? { best: null, attempts: [], plays: 0, transpose: null };
-  }
-
-  setTransposeOverride(songId: string, semitones: number | null): void {
-    const p = this.progress(songId);
-    this.data.progress[songId] = { ...p, transpose: semitones };
-    this.save();
+    return this.data.progress[songId] ?? { best: null, attempts: [], plays: 0 };
   }
 
   /** Records an attempt; returns the previous best for "new best" messaging. */
@@ -150,7 +160,6 @@ export class Store {
     const counts = a.mode === 'sing' && a.speed === 1;
     const isNewBest = counts && (!previousBest || a.score > previousBest.score);
     this.data.progress[songId] = {
-      ...p,
       plays: p.plays + 1,
       best: isNewBest ? a : previousBest,
       attempts: [...p.attempts, a].slice(-30),
@@ -159,21 +168,22 @@ export class Store {
     return { previousBest, isNewBest };
   }
 
-  recordTrainer(key: string, score: number): boolean {
-    const prev = this.data.trainer[key];
-    if (!prev || score > prev.score) {
-      this.data.trainer[key] = { score, date: Date.now() };
-      this.save();
-      return true;
-    }
-    return false;
+  lastPosition(songId: string): number {
+    return this.data.lastPosition[songId] ?? 0;
+  }
+
+  setLastPosition(songId: string, seconds: number): void {
+    const v = Math.max(0, Math.round(seconds * 10) / 10);
+    if (this.data.lastPosition[songId] === v) return;
+    this.data.lastPosition[songId] = v;
+    writeJSON(KEY, this.data); // frequent: skip listeners
   }
 
   resetAll(): void {
     this.data = emptySave();
     this.save();
     try {
-      localStorage.removeItem(IMPORTS_KEY);
+      sessionStorage.removeItem(WARMUP_SESSION_KEY);
     } catch {
       /* ignore */
     }
@@ -188,12 +198,21 @@ export class Store {
     writeJSON(KEY, this.data);
     for (const l of this.listeners) l();
   }
+}
 
-  loadImports(): Song[] {
-    return readJSON<Song[]>(IMPORTS_KEY) ?? [];
+/** Warm-up offer: once per browser session (a tab), not once per song start. */
+export function warmupOffered(): boolean {
+  try {
+    return sessionStorage.getItem(WARMUP_SESSION_KEY) === '1';
+  } catch {
+    return false;
   }
+}
 
-  saveImports(songs: Song[]): boolean {
-    return writeJSON(IMPORTS_KEY, songs);
+export function markWarmupOffered(): void {
+  try {
+    sessionStorage.setItem(WARMUP_SESSION_KEY, '1');
+  } catch {
+    /* ignore */
   }
 }

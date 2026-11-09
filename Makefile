@@ -1,5 +1,5 @@
 .DEFAULT_GOAL := help
-.PHONY: help install dev build preview test typecheck check clean
+.PHONY: help install dev build preview test typecheck check clean extract
 
 help: ## List available targets
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-10s\033[0m %s\n", $$1, $$2}'
@@ -26,3 +26,6 @@ check: typecheck test ## Type-check and run tests
 
 clean: ## Remove build output
 	rm -rf dist
+
+extract: ## Rebuild public/songs/old-town-road/melody.json from the two MP3s (needs python3 + numpy/scipy/librosa/soundfile)
+	npm run extract

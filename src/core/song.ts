@@ -1,28 +1,23 @@
-import { parseNote, pitchClass, type Mode } from './music';
+import { parseNote, type Mode } from './music';
 
 /**
- * Songs are authored as compact strings (see `SongSource`) and parsed into absolute-beat
- * events. Beats are the canonical time unit: tempo and practice speed only change how
- * beats map to seconds, so slowing down never changes pitch or the score scale.
+ * Song model used by the scoring engine and the note highway. Beats are the canonical time
+ * unit: for the recorded song, `BeatMap` (core/melody.ts) converts seconds to beats so the
+ * same engine scores at any practice speed. The compact text format (`melody: "C4:1 D4 …"`)
+ * is kept for unit tests, where a hand-written tune is easier to reason about than a pitch
+ * track extracted from audio.
  */
-
-export type AccompStyle = 'gentle' | 'hymn' | 'waltz' | 'march' | 'ballad' | 'none';
-export type ChordQuality = 'maj' | 'min' | '7' | 'maj7' | 'min7' | 'dim' | 'sus4' | 'none';
 
 export interface SongSource {
   id: string;
   title: string;
-  /** Composer / origin, shown in the library. */
   credit: string;
-  /** Why this is public domain, shown in the song info. */
-  pdNote: string;
   bpm: number;
   beatsPerBar: number;
   /** Tonic of the written key, e.g. "D" or "Bb". */
   tonic: string;
   mode: Mode;
   difficulty: 1 | 2 | 3;
-  style: AccompStyle;
   /**
    * Space-separated `Pitch:beats` tokens, e.g. `C4:1 D4 E4:2`. Duration is sticky.
    * `R:beats` is a rest. `|` asserts a bar line falls here.
@@ -33,8 +28,6 @@ export interface SongSource {
    * `~` continues the previous syllable (melisma). `/` (not a note) starts a new display line.
    */
   lyrics?: string;
-  /** `Root[quality]:beats` tokens (`C`, `Am`, `G7`, `Fmaj7`, `Em7`, `Bdim`, `Dsus4`, `N`). */
-  chords?: string;
   /**
    * Named practice sections, by 1-based bar numbers (inclusive) or, for phrases that start
    * on a pickup, by beat range `[start, end)`.
@@ -49,18 +42,10 @@ export interface Note {
   midi: number;
   start: number;
   beats: number;
-  /** Syllable as authored (may end in "-"), "" for melisma continuation. */
+  /** Syllable as authored (may end in "-"), "" for melisma continuation or no lyric. */
   lyric: string;
   /** True when an authored lyric line starts at this note. */
   line?: boolean;
-}
-
-export interface Chord {
-  start: number;
-  beats: number;
-  /** Root pitch class 0..11, or -1 for "no chord". */
-  root: number;
-  quality: ChordQuality;
 }
 
 export interface Section {
@@ -76,23 +61,18 @@ export interface Song {
   id: string;
   title: string;
   credit: string;
-  pdNote: string;
   bpm: number;
   beatsPerBar: number;
   tonicPc: number;
   mode: Mode;
   difficulty: 1 | 2 | 3;
-  style: AccompStyle;
   notes: Note[];
-  chords: Chord[];
   sections: Section[];
   totalBeats: number;
   low: number;
   high: number;
   /** Duration-weighted mean pitch (where the song "sits"). */
   tessitura: number;
-  /** True for user-imported songs. */
-  imported?: boolean;
 }
 
 const TONIC_PC: Record<string, number> = {
@@ -125,37 +105,6 @@ export function parseMelody(src: string, beatsPerBar: number): { midi: number | 
   return events;
 }
 
-export function parseChordSymbol(sym: string): { root: number; quality: ChordQuality } {
-  if (sym === 'N') return { root: -1, quality: 'none' };
-  const m = /^([A-G])([#b]?)(maj7|m7|m|7|dim|sus4)?$/.exec(sym);
-  if (!m) throw new Error(`Bad chord "${sym}"`);
-  const root = TONIC_PC[m[1]! + (m[2] ?? '')];
-  if (root === undefined) throw new Error(`Bad chord root "${sym}"`);
-  const q = m[3];
-  const quality: ChordQuality =
-    q === 'maj7' ? 'maj7' : q === 'm7' ? 'min7' : q === 'm' ? 'min' : q === '7' ? '7' : q === 'dim' ? 'dim' : q === 'sus4' ? 'sus4' : 'maj';
-  return { root, quality };
-}
-
-export function parseChords(src: string, beatsPerBar: number): Chord[] {
-  const out: Chord[] = [];
-  let t = 0;
-  let dur = beatsPerBar;
-  for (const tok of src.trim().split(/\s+/)) {
-    if (tok === '|') {
-      if (Math.abs(t / beatsPerBar - Math.round(t / beatsPerBar)) > 1e-6) {
-        throw new Error(`Chord bar line at beat ${t} is not on a bar boundary`);
-      }
-      continue;
-    }
-    const [sym, d] = tok.split(':');
-    if (d !== undefined) dur = Number(d);
-    out.push({ start: t, beats: dur, ...parseChordSymbol(sym!) });
-    t += dur;
-  }
-  return out;
-}
-
 export function buildSong(src: SongSource): Song {
   const events = parseMelody(src.melody, src.beatsPerBar);
   const sung = events.filter((e) => e.midi !== null);
@@ -178,7 +127,6 @@ export function buildSong(src: SongSource): Song {
     lyric: lyricTokens[i] === '~' ? '' : (lyricTokens[i] ?? ''),
     ...(explicitLines ? { line: i === 0 || lineStarts.has(i) } : {}),
   }));
-  const chords = src.chords ? parseChords(src.chords, src.beatsPerBar) : [];
   const tonicPc = TONIC_PC[src.tonic];
   if (tonicPc === undefined) throw new Error(`${src.id}: bad tonic ${src.tonic}`);
   const last = events[events.length - 1]!;
@@ -187,31 +135,22 @@ export function buildSong(src: SongSource): Song {
       id: src.id,
       title: src.title,
       credit: src.credit,
-      pdNote: src.pdNote,
       bpm: src.bpm,
       beatsPerBar: src.beatsPerBar,
       tonicPc,
       mode: src.mode,
       difficulty: src.difficulty,
-      style: src.style,
     },
     notes,
-    chords,
     src.sections,
     last.start + last.beats,
   );
 }
 
-export type SongMeta = Pick<Song, 'id' | 'title' | 'credit' | 'pdNote' | 'bpm' | 'beatsPerBar' | 'tonicPc' | 'mode' | 'difficulty' | 'style'>;
+export type SongMeta = Pick<Song, 'id' | 'title' | 'credit' | 'bpm' | 'beatsPerBar' | 'tonicPc' | 'mode' | 'difficulty'>;
 
-/** Assemble a Song from already-timed notes (used by the text format and MIDI import). */
-export function songFromNotes(
-  meta: SongMeta,
-  notes: Note[],
-  chords: Chord[],
-  sectionsSrc?: SectionSource[],
-  melodyEnd?: number,
-): Song {
+/** Assemble a Song from already-timed notes. */
+export function songFromNotes(meta: SongMeta, notes: Note[], sectionsSrc?: SectionSource[], melodyEnd?: number): Song {
   if (!notes.length) throw new Error(`${meta.id}: no notes`);
   const lastNote = notes[notes.length - 1]!;
   const end = Math.max(melodyEnd ?? 0, lastNote.start + lastNote.beats);
@@ -227,7 +166,7 @@ export function songFromNotes(
     if (noteTo < 0) noteTo = notes.length;
     return { name: s.name, startBeat, endBeat, noteFrom, noteTo };
   });
-  return { ...meta, notes, chords, sections, totalBeats, ...rangeOf(notes) };
+  return { ...meta, notes, sections, totalBeats, ...rangeOf(notes) };
 }
 
 export function rangeOf(notes: readonly Note[]): { low: number; high: number; tessitura: number } {
@@ -242,20 +181,6 @@ export function rangeOf(notes: readonly Note[]): { low: number; high: number; te
     w += n.beats;
   }
   return { low, high, tessitura: w ? wsum / w : 60 };
-}
-
-/** A copy of the song shifted by `semitones` (melody and chords). */
-export function transposeSong(song: Song, semitones: number): Song {
-  if (semitones === 0) return song;
-  const notes = song.notes.map((n) => ({ ...n, midi: n.midi + semitones }));
-  const chords = song.chords.map((c) => (c.root < 0 ? c : { ...c, root: pitchClass(c.root + semitones) }));
-  return {
-    ...song,
-    notes,
-    chords,
-    tonicPc: pitchClass(song.tonicPc + semitones),
-    ...rangeOf(notes),
-  };
 }
 
 /** Join syllables into display words: "Twin-" + "kle" -> "Twinkle". */
@@ -299,7 +224,6 @@ export function lyricLines(song: Song, from: number, to: number): { noteFrom: nu
   const out: { noteFrom: number; noteTo: number }[] = [];
   let start = from;
   if (song.notes.some((n) => n.line !== undefined)) {
-    // Authored line breaks (built-in songs).
     for (let i = from + 1; i < to; i++) {
       if (song.notes[i]!.line) {
         out.push({ noteFrom: start, noteTo: i });
@@ -309,16 +233,13 @@ export function lyricLines(song: Song, from: number, to: number): { noteFrom: nu
     out.push({ noteFrom: start, noteTo: to });
     return out;
   }
-  // Heuristic for imported songs.
   for (let i = from; i < to; i++) {
     const n = song.notes[i]!;
     const next = song.notes[i + 1];
-    // Punctuation ends a line only once it has some length, so lines are not choppy.
     const punct = /[,.;:!?]$/.test(n.lyric) && (i - start >= 5 || /[.!?]$/.test(n.lyric));
     const gap = next ? next.start - (n.start + n.beats) >= 1 : true;
     const long = i - start >= 13;
     const lastInWindow = i === to - 1;
-    // Do not break inside a word or before a melisma continuation.
     const midWord = n.lyric.endsWith('-') || (next !== undefined && next.lyric === '');
     if (lastInWindow || ((punct || gap || long) && !midWord)) {
       out.push({ noteFrom: start, noteTo: i + 1 });

@@ -1,16 +1,43 @@
-import { noteNameWithOctave } from '../../core/music';
-import { voiceTypeFor } from '../../core/range';
+import { fmtTime } from '../../core/melody';
+import { SONG } from '../../core/songpack';
 import type { App, Screen } from '../app';
-import { brandMark, h, icon } from '../dom';
+import { packFilesCard } from '../components/packFiles';
+import { brandMark, fmtInt, h, icon } from '../dom';
 
 export function homeScreen(app: App): Screen {
-  const data = app.store.data;
-  const range = data.range;
   const s = app.store.settings;
-  const latencyLabel = s.latencyMs !== null ? `Latency ${Math.round(s.latencyMs)} ms` : 'Latency: auto';
-
-  const firstRun = !data.onboarded && !range;
   const wave = heroWave();
+  const status = h('div', { class: 'status-row' });
+  const actions = h('div', { class: 'row', style: 'margin-top:24px' });
+  const filesHost = h('div');
+  const best = app.store.progress(SONG.id).best;
+  const last = app.store.lastPosition(SONG.id);
+
+  const renderStatus = () => {
+    const ps = app.packStatus;
+    const ready = !!ps?.pack;
+    const latencyLabel = s.latencyMs !== null ? `Latency ${Math.round(s.latencyMs)} ms` : 'Latency: auto';
+    status.replaceChildren(
+      ...[
+      h('span', { class: `chip ${ready ? 'ok' : 'warn'}` }, h('i', { class: 'dot' }), !ps ? 'Checking song files…' : ready ? (ps.pack!.referenceUrl ? 'Song files ready' : 'Instrumental ready · no reference track') : 'Song files needed'),
+      h('span', { class: `chip ${app.micReady ? 'ok' : ''}` }, h('i', { class: 'dot' }), app.micReady ? 'Mic ready' : 'Mic: asks when you start'),
+      h('span', { class: `chip ${s.latencyMs !== null ? 'ok' : ''}` }, h('i', { class: 'dot' }), latencyLabel),
+      h('span', { class: `chip ${s.headphones ? 'accent' : 'warn'}` }, s.headphones ? 'Headphones' : 'Speakers'),
+      ps?.pack && !ps.pack.lyrics ? h('span', { class: 'chip warn' }, 'No lyrics yet') : ps?.pack && !ps.pack.timing ? h('span', { class: 'chip warn' }, 'Lyrics not synced') : null,
+      ].filter((x) => x !== null),
+    );
+    actions.replaceChildren(
+      ...[
+      h('button', { class: 'btn primary big', disabled: !ready, onclick: () => void app.startSession({ mode: 'sing' }) }, icon('sing', 'kbd-icon'), 'Sing'),
+      h('button', { class: 'btn big', disabled: !ready, onclick: () => void app.startSession({ mode: 'practice' }) }, icon('practice', 'kbd-icon'), 'Practice'),
+      ready && last > 5 && last < (ps!.pack!.melody.duration - 5)
+        ? h('button', { class: 'btn ghost', onclick: () => void app.startSession({ mode: 'practice', startAt: last }) }, `Resume practice at ${fmtTime(last)}`)
+        : null,
+      ].filter((x) => x !== null),
+    );
+    filesHost.replaceChildren(ready ? h('div') : packFilesCard(app, renderStatus));
+    if (!ready && ps) filesHost.prepend(h('p', { class: 'muted', style: 'margin:18px 0 10px' }, 'This site does not ship the song audio. Pick the two MP3s (and lyrics.txt) once; they stay in this browser.'));
+  };
 
   const el = h(
     'div',
@@ -18,63 +45,47 @@ export function homeScreen(app: App): Screen {
     h(
       'div',
       { class: 'topbar' },
-      h('div', { class: 'brand' }, brandMark(), 'Pitchline'),
+      h('div', { class: 'brand' }, brandMark(), 'Pitch Hero'),
       h('div', { class: 'spacer' }),
+      h('button', { class: 'btn ghost', onclick: () => app.go({ name: 'monitor' }) }, icon('monitor', 'kbd-icon'), 'Pitch Monitor'),
       h('button', { class: 'btn ghost', onclick: () => app.go({ name: 'settings' }) }, icon('settings', 'kbd-icon'), 'Settings'),
     ),
     h(
       'section',
       { class: 'hero' },
       wave.el,
-      h('h1', null, 'Sing it ', h('span', { class: 'glow' }, 'on pitch'), '.'),
-      h(
-        'p',
-        null,
-        'Follow the glowing notes, match them with your voice, and watch the line light up. Everything runs on this device; your microphone never leaves it.',
-      ),
-      h(
-        'div',
-        { class: 'row', style: 'margin-top:26px' },
-        h('button', { class: 'btn primary big', onclick: () => app.go({ name: 'songs' }) }, 'Choose a song'),
-        firstRun
-          ? h('button', { class: 'btn big', onclick: () => app.go({ name: 'setup', next: { name: 'range', next: { name: 'songs' } } }) }, 'Quick setup (1 min)')
-          : null,
-      ),
-      h(
-        'div',
-        { class: 'status-row' },
-        h('span', { class: `chip ${app.micReady ? 'ok' : ''}` }, h('i', { class: 'dot' }), app.micReady ? 'Mic ready' : 'Mic: asks when you start'),
-        h(
-          'span',
-          { class: `chip ${range ? 'ok' : ''}` },
-          h('i', { class: 'dot' }),
-          range ? `Range ${noteNameWithOctave(range.low)}–${noteNameWithOctave(range.high)} · ${voiceTypeFor(range)}` : 'Vocal range: not set',
-        ),
-        h('span', { class: `chip ${s.latencyMs !== null ? 'ok' : ''}` }, h('i', { class: 'dot' }), latencyLabel),
-        h('span', { class: `chip ${s.headphones ? 'accent' : 'warn'}` }, s.headphones ? 'Headphones' : 'Speakers'),
-      ),
+      h('div', { class: 'hud-label' }, 'Practice song'),
+      h('h1', null, SONG.title),
+      h('p', null, `${SONG.artist} · karaoke instrumental with a live pitch monitor, synced lyrics, slow-down practice and A–B looping.`),
+      actions,
+      status,
+      best ? h('div', { class: 'row', style: 'margin-top:14px' }, h('span', { class: `grade-badge grade-${best.grade}` }, best.grade), h('span', { class: 'muted' }, `Best ${fmtInt(best.score)} · ${Math.round(best.accuracy)}% pitch accuracy`)) : null,
     ),
+    filesHost,
     h(
       'div',
       { class: 'mode-grid' },
-      modeCard('play', 'Sing the Song', 'Full songs with backing band and guide melody. Earn points, build combos, beat your best.', () => app.go({ name: 'songs' })),
-      modeCard('practice', 'Practice Section', 'Loop a tricky phrase at 75 % or 50 % speed. Hear the target note whenever you need it.', () => app.go({ name: 'songs' }), true),
-      modeCard('trainer', 'Pitch Trainer', 'Short single notes and intervals with instant feedback. Lock each one in to score.', () => app.go({ name: 'trainer' }), true),
-      modeCard('monitor', 'Pitch Monitor', 'A live pitch graph of whatever you sing, with note, Hz and cents. No song, no score.', () => app.go({ name: 'monitor' }), true),
+      modeCard('warmup', '2-Minute Warm-Up', 'Loosen up, lip trills, hum glides and sirens with a timer. Offered before the first session; available any time.', () => app.go({ name: 'warmup' })),
+      modeCard('practice', 'Practice', 'Slow the track to 75 % or 50 % with pitch preserved, loop a hard section, keep the live pitch feedback. No score.', () => void app.startSession({ mode: 'practice' }), true),
+      modeCard('sing', 'Sing', 'The full song over the instrumental with live pitch scoring and a results breakdown at the end.', () => void app.startSession({ mode: 'sing' })),
+      modeCard('settings', 'Settings', 'Microphone, headphones, latency calibration, music volume, song files and lyric sync.', () => app.go({ name: 'settings' }), true),
     ),
     h(
       'p',
       { class: 'faint small', style: 'margin-top:34px' },
-      'Built-in songs are public-domain melodies and lyrics, arranged and synthesized in your browser. ',
-      h('a', { href: '#', onclick: (e: Event) => { e.preventDefault(); app.go({ name: 'range' }); } }, range ? 'Re-check vocal range' : 'Check vocal range'),
+      'Everything runs in this browser; your microphone never leaves the device. ',
+      h('a', { href: '#', onclick: (e: Event) => { e.preventDefault(); app.go({ name: 'setup' }); } }, 'Mic check'),
       ' · ',
-      h('a', { href: '#', onclick: (e: Event) => { e.preventDefault(); app.go({ name: 'latency' }); } }, 'Calibrate latency'),
+      h('a', { href: '#', onclick: (e: Event) => { e.preventDefault(); app.go({ name: 'latency', next: { name: 'home' } }); } }, 'Calibrate latency'),
     ),
   );
+
+  renderStatus();
+  void app.loadPack().then(renderStatus);
   return { el, destroy: wave.stop };
 }
 
-function modeCard(ic: 'play' | 'practice' | 'trainer' | 'monitor', title: string, text: string, onclick: () => void, alt = false): HTMLElement {
+function modeCard(ic: 'sing' | 'practice' | 'warmup' | 'settings', title: string, text: string, onclick: () => void, alt = false): HTMLElement {
   return h('button', { class: `mode-card ${alt ? 'alt' : ''}`, onclick }, icon(ic), h('h3', null, title), h('span', { class: 'muted small' }, text));
 }
 
@@ -96,7 +107,6 @@ function heroWave(): { el: HTMLCanvasElement; stop: () => void } {
     g.setTransform(dpr, 0, 0, dpr, 0, 0);
     g.clearRect(0, 0, w, hh);
     const time = t / 1000;
-    // Target bars.
     const bars = [0.18, 0.32, 0.26, 0.4, 0.3, 0.22, 0.36];
     const bw = w / 9;
     for (let i = 0; i < bars.length; i++) {
@@ -108,7 +118,6 @@ function heroWave(): { el: HTMLCanvasElement; stop: () => void } {
       g.roundRect(xx, y - 6, bw, 12, 6);
       g.fill();
     }
-    // Voice line.
     g.lineWidth = 2.5;
     g.strokeStyle = 'rgba(61,255,162,0.35)';
     g.beginPath();

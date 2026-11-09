@@ -1,23 +1,17 @@
-import { keyName, keyPrefersFlats, noteNameWithOctave } from '../../core/music';
+import { keyPrefersFlats, noteNameWithOctave } from '../../core/music';
+import type { SectionSpec } from '../../core/melody';
 import { THRESHOLDS, phraseInsights, pitchInsights, weakestSection, type Counts, type Judgment, type NoteResult, type PhraseInsight, type PitchInsight } from '../../core/scoring';
 import type { Song } from '../../core/song';
+import { SONG } from '../../core/songpack';
 import type { AttemptRecord } from '../../core/storage';
-import type { App, PlayConfig, Route, Screen } from '../app';
+import type { App, Route, Screen, SessionConfig } from '../app';
 import { backButton, fmtInt, h } from '../dom';
 import { deviationTimeline } from '../render/deviation';
-import type { TrailPt } from '../render/highway';
-import { sparkline } from './songs';
-
-export interface ReplayData {
-  trail: TrailPt[];
-  judgments: (Judgment | undefined)[];
-  result: AttemptResult;
-}
 
 export interface AttemptResult {
-  config: PlayConfig;
-  /** The (transposed) song as it was sung. */
+  config: SessionConfig;
   song: Song;
+  sections: SectionSpec[];
   score: number;
   accuracy: number;
   timing: number;
@@ -25,13 +19,8 @@ export interface AttemptResult {
   grade: string;
   counts: Counts;
   notes: NoteResult[];
-  noteFrom: number;
-  noteTo: number;
-  passes: number[];
   previousBest: AttemptRecord | null;
   isNewBest: boolean;
-  countsTowardBest: boolean;
-  replay: ReplayData | undefined;
 }
 
 const LABEL: Record<Judgment, string> = { perfect: 'Perfect', great: 'Great', good: 'Good', off: 'Off', miss: 'Missed' };
@@ -42,9 +31,8 @@ export function resultsScreen(app: App, route: Route): Screen {
   const song = r.song;
   const flats = keyPrefersFlats(song.tonicPc, song.mode);
   const nn = (m: number) => noteNameWithOctave(m, flats);
-  const progress = app.store.progress(r.config.songId);
+  const progress = app.store.progress(SONG.id);
   const fullRuns = progress.attempts.filter((a) => a.mode === 'sing' && a.speed === 1);
-  const base = app.songById(r.config.songId);
 
   const scoreEl = h('div', { class: 'score-line' }, '0');
   let raf = 0;
@@ -58,32 +46,23 @@ export function resultsScreen(app: App, route: Route): Screen {
   raf = requestAnimationFrame(count);
 
   let bestLine: HTMLElement;
-  if (!r.countsTowardBest) {
-    bestLine = h('div', { class: 'muted' }, `Practice run (${Math.round(r.config.speed * 100)}% speed) · high scores count full-speed song runs`);
-  } else if (r.isNewBest && r.previousBest) {
+  if (r.isNewBest && r.previousBest) {
     bestLine = h('div', { class: 'chip ok', style: 'font-size:14px;align-self:flex-start' }, `New high score! +${fmtInt(r.score - r.previousBest.score)} over ${fmtInt(r.previousBest.score)}`);
   } else if (r.isNewBest) {
     bestLine = h('div', { class: 'chip ok', style: 'font-size:14px;align-self:flex-start' }, 'First high score set');
-  } else {
-    const prev = r.previousBest!;
+  } else if (r.previousBest) {
+    const prev = r.previousBest;
     bestLine = h('div', { class: 'muted' }, `High score ${fmtInt(prev.score)} (${Math.round(prev.accuracy)}%) · ${fmtInt(prev.score - r.score)} to beat it`);
-  }
+  } else bestLine = h('div');
 
-  // Practice weak section: the weakest section among those sung in this attempt.
-  const scoredSong = { ...song, sections: song.sections.filter((s) => s.noteFrom < r.noteTo && s.noteTo > r.noteFrom) };
-  const weakLocal = scoredSong.sections.length ? weakestSection(scoredSong, r.notes) : -1;
-  const weakIdx = weakLocal >= 0 ? song.sections.indexOf(scoredSong.sections[weakLocal]!) : -1;
-  const weakSec = weakIdx >= 0 ? song.sections[weakIdx]! : null;
+  const weakIdx = song.sections.length > 1 ? weakestSection(song, r.notes) : -1;
+  const weak = weakIdx >= 0 ? r.sections[weakIdx] ?? null : null;
 
-  const tryAgain = () => app.go({ name: 'play', config: { ...r.config } });
-  const watch = () => r.replay && app.go({ name: 'play', config: { ...r.config, loop: false, replay: r.replay } });
-  const practiceWeak = () =>
-    weakIdx >= 0 &&
-    app.go({ name: 'play', config: { ...r.config, mode: 'practice', section: weakIdx, speed: 0.75, loop: true, guide: true, backing: true } });
+  const tryAgain = () => void app.startSession({ mode: 'sing' });
+  const practiceWeak = () => weak && void app.startSession({ mode: 'practice', startAt: weak.start, loop: { a: weak.start, b: weak.end } });
 
   const ins = pitchInsights(r.notes);
   const phrases = phraseInsights(song, r.notes);
-  // Consistently late entries usually mean uncompensated audio latency (e.g. Bluetooth).
   const onsets = r.notes.map((n) => n.onset).filter((o): o is number => o !== null).sort((a, b) => a - b);
   const medianOnset = onsets.length >= 5 ? onsets[onsets.length >> 1]! : 0;
   const latencyHint =
@@ -92,7 +71,7 @@ export function resultsScreen(app: App, route: Route): Screen {
           'div',
           { class: 'notice warn row', style: 'margin-top:14px' },
           h('span', { class: 'grow' }, `Your notes started about ${Math.round(medianOnset * 1000)} ms late on average. If that felt on time to you, your audio setup has extra delay; calibrating removes it from scoring.`),
-          h('button', { class: 'btn', onclick: () => app.go({ name: 'latency', next: { name: 'songs', selectId: r.config.songId } }) }, 'Calibrate latency'),
+          h('button', { class: 'btn', onclick: () => app.go({ name: 'latency', next: { name: 'home' } }) }, 'Calibrate latency'),
         )
       : null;
   const total = r.notes.length;
@@ -101,18 +80,12 @@ export function resultsScreen(app: App, route: Route): Screen {
   const el = h(
     'div',
     { class: 'screen' },
-    h('div', { class: 'topbar' }, backButton(() => app.go({ name: 'songs', selectId: r.config.songId }), 'Songs'), h('div', { class: 'spacer' })),
+    h('div', { class: 'topbar' }, backButton(() => app.go({ name: 'home' }), 'Home'), h('div', { class: 'spacer' })),
     h(
       'section',
       { class: 'results-hero' },
       h('div', { class: `big-grade grade-${r.grade}` }, r.grade),
-      h(
-        'div',
-        { class: 'stack', style: 'gap:8px' },
-        h('div', { class: 'muted' }, `${song.title}${r.config.section !== null ? ` · ${song.sections[r.config.section]?.name ?? ''}` : ''} · ${keyName(song.tonicPc, song.mode)}${r.config.transpose ? ` (${r.config.transpose > 0 ? '+' : ''}${r.config.transpose})` : ''}`),
-        scoreEl,
-        bestLine,
-      ),
+      h('div', { class: 'stack', style: 'gap:8px' }, h('div', { class: 'muted' }, `${SONG.title} · full song`), scoreEl, bestLine),
     ),
     h(
       'div',
@@ -129,14 +102,13 @@ export function resultsScreen(app: App, route: Route): Screen {
       ...(['perfect', 'great', 'good', 'off', 'miss'] as Judgment[]).map((j) =>
         h('span', { class: 'chip' }, h('i', { class: 'dot', style: `color:var(--${j === 'miss' ? 'miss' : j})` }), `${LABEL[j]} ${r.counts[j]}`),
       ),
-      r.passes.length > 1 ? h('span', { class: 'chip accent' }, `Passes: ${r.passes.map((p) => `${Math.round(p)}%`).join(' → ')}`) : null,
     ),
     h(
       'div',
       { class: 'row', style: 'margin-top:22px' },
-      h('button', { class: 'btn primary big', onclick: tryAgain }, 'Try Again'),
-      r.replay ? h('button', { class: 'btn big', onclick: watch, title: 'Watch your run with the guide melody' }, 'Replay Song') : null,
-      weakSec ? h('button', { class: 'btn big', onclick: practiceWeak }, `Practice Weak Section: ${weakSec.name}`) : null,
+      h('button', { class: 'btn primary big', onclick: tryAgain }, 'Sing Again'),
+      weak ? h('button', { class: 'btn big', onclick: practiceWeak }, `Practice Weakest Part: ${weak.name}`) : null,
+      h('button', { class: 'btn big', onclick: () => void app.startSession({ mode: 'practice' }) }, 'Practice'),
     ),
     h(
       'div',
@@ -164,7 +136,7 @@ export function resultsScreen(app: App, route: Route): Screen {
       ...timelineRows(song, r, nn),
     ),
     fullRuns.length >= 2 ? h('div', { class: 'card', style: 'margin-top:14px' }, sparkline(fullRuns)) : null,
-    base && base.pdNote ? h('p', { class: 'faint tiny', style: 'margin-top:18px' }, base.pdNote) : null,
+    h('p', { class: 'faint tiny', style: 'margin-top:18px' }, 'Only passages where the melody could be extracted reliably from the reference recording are scored; the rest of the song is free.'),
   );
 
   const onKey = (e: KeyboardEvent) => {
@@ -202,20 +174,19 @@ function timelineRows(song: Song, r: AttemptResult, nn: (m: number) => string): 
   const byIndex = new Map(r.notes.map((n) => [n.index, n]));
   const rows: HTMLElement[] = [];
   for (const sec of song.sections) {
-    if (sec.noteTo <= r.noteFrom || sec.noteFrom >= r.noteTo) continue;
     const dots: HTMLElement[] = [];
-    for (let i = Math.max(sec.noteFrom, r.noteFrom); i < Math.min(sec.noteTo, r.noteTo); i++) {
+    for (let i = sec.noteFrom; i < sec.noteTo; i++) {
       const n = byIndex.get(i);
       if (!n) continue;
       const bias = n.biasCents;
       const dir = Number.isFinite(bias) && Math.abs(bias) > THRESHOLDS.perfect ? (bias > 0 ? '↑' : '↓') : '';
-      const lyric = n.lyric ? `"${n.lyric.replace(/-$/, '')}" · ` : '';
       const detail =
         n.judgment === 'miss'
           ? 'not sung'
-          : `${Math.round(Math.abs(bias))} cents ${bias > 0 ? 'sharp' : 'flat'} · ${Math.round(n.accuracy * 100)}%${n.onset !== null ? ` · entered ${Math.round(n.onset * 1000)} ms ${n.onset >= 0 ? 'after' : 'before'} the beat` : ''}`;
-      dots.push(h('span', { class: `tdot ${n.judgment}`, title: `${lyric}${nn(n.midi)} · ${LABEL[n.judgment]} · ${detail}` }, h('span', { class: 'dir' }, dir)));
+          : `${Math.round(Math.abs(bias))} cents ${bias > 0 ? 'sharp' : 'flat'} · ${Math.round(n.accuracy * 100)}%${n.onset !== null ? ` · entered ${Math.round(n.onset * 1000)} ms ${n.onset >= 0 ? 'after' : 'before'} the note` : ''}`;
+      dots.push(h('span', { class: `tdot ${n.judgment}`, title: `${nn(n.midi)} · ${LABEL[n.judgment]} · ${detail}` }, h('span', { class: 'dir' }, dir)));
     }
+    if (!dots.length) continue;
     const acc = r.notes.filter((n) => n.index >= sec.noteFrom && n.index < sec.noteTo);
     const pct = acc.length ? Math.round((100 * acc.reduce((s, n) => s + n.accuracy * n.beats, 0)) / acc.reduce((s, n) => s + n.beats, 0)) : 0;
     rows.push(
@@ -239,7 +210,7 @@ function insightRow(p: PitchInsight, nn: (m: number) => string, good: boolean, s
       : `${Math.round(Math.abs(bias))} cents ${bias > 0 ? 'sharp ↑' : 'flat ↓'}`;
   const color = good ? 'var(--perfect)' : Number.isFinite(bias) && Math.abs(bias) > THRESHOLDS.great ? 'var(--off)' : 'var(--good)';
   const where = [...new Set(p.indices.map((i) => song.sections.find((s) => i >= s.noteFrom && i < s.noteTo)?.name).filter(Boolean))];
-  const context = [p.lyrics.length ? `on “${p.lyrics.join('”, “')}”` : '', !good && where.length ? `in ${where.slice(0, 2).join(', ')}` : ''].filter(Boolean).join(' ');
+  const context = !good && where.length ? `in ${where.slice(0, 2).join(', ')}` : '';
   return h(
     'div',
     { class: 'insight' },
@@ -259,7 +230,24 @@ function phraseRow(p: PhraseInsight, good: boolean): HTMLElement {
   return h(
     'div',
     { class: 'insight' },
-    h('span', { class: 'note', style: `color:${good ? 'var(--perfect)' : 'var(--off)'};font-size:13px;min-width:86px` }, good ? 'Best line' : 'Hardest line'),
-    h('div', { class: 'grow' }, h('div', null, `“${p.text.replace(/[,;:]$/, '')}”`), h('div', { class: 'faint tiny' }, `${Math.round(p.accuracy * 100)}% · ${dir}`)),
+    h('span', { class: 'note', style: `color:${good ? 'var(--perfect)' : 'var(--off)'};font-size:13px;min-width:86px` }, good ? 'Best phrase' : 'Hardest phrase'),
+    h('div', { class: 'grow' }, h('div', null, p.text), h('div', { class: 'faint tiny' }, `${Math.round(p.accuracy * 100)}% · ${dir}`)),
   );
+}
+
+export function sparkline(attempts: AttemptRecord[]): HTMLElement {
+  const pts = attempts.slice(-15);
+  const w = 300;
+  const hh = 46;
+  const xs = (i: number) => (pts.length === 1 ? w / 2 : (i / (pts.length - 1)) * (w - 8) + 4);
+  const ys = (a: number) => hh - 4 - (Math.max(0, Math.min(100, a)) / 100) * (hh - 8);
+  const d = pts.map((p, i) => `${i ? 'L' : 'M'}${xs(i).toFixed(1)},${ys(p.accuracy).toFixed(1)}`).join(' ');
+  const last = pts[pts.length - 1]!;
+  const wrap = h('div', null, h('div', { class: 'hud-label', style: 'margin-bottom:4px' }, `Accuracy, last ${pts.length} full runs`));
+  wrap.insertAdjacentHTML(
+    'beforeend',
+    `<svg class="spark" viewBox="0 0 ${w} ${hh}" preserveAspectRatio="none" role="img" aria-label="Accuracy trend"><path d="${d}" fill="none" stroke="#5ee0ff" stroke-width="2" vector-effect="non-scaling-stroke"/></svg>`,
+  );
+  wrap.append(h('div', { class: 'faint tiny' }, `Latest ${Math.round(last.accuracy)}% · best ${Math.round(Math.max(...pts.map((p) => p.accuracy)))}%`));
+  return wrap;
 }

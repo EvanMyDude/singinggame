@@ -1,8 +1,8 @@
 {
-  "name": "pitchline",
+  "name": "pitch-hero",
   "private": true,
-  "version": "0.1.0",
-  "description": "Browser singing game for pitch-accuracy practice. Local-first, no backend.",
+  "version": "1.0.0",
+  "description": "Personal karaoke practice app: live pitch monitor, synced lyrics, slow-down practice, A-B loop. Local-first, no backend.",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -10,9 +10,11 @@
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "extract": "python3 tools/extract_melody.py public/songs/old-town-road/instrumental.mp3 public/songs/old-town-road/reference.mp3 -o public/songs/old-town-road/melody.json"
   },
   "devDependencies": {
+    "@types/node": "^22.20.5",
     "typescript": "^5.9.3",
     "vite": "^8.3.6",
     "vitest": "^5.1.0"

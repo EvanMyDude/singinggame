@@ -10,7 +10,7 @@ import { gateFromSensitivity, sensitivityFromGate } from './setup';
 /** Vocal Pitch Monitor: a free-running real-time pitch graph with note, Hz and cents readout. */
 export function monitorScreen(app: App): Screen {
   const canvas = h('canvas', { class: 'monitor-canvas', 'aria-label': 'Real-time pitch graph' });
-  const graph = new PitchGraph(canvas, defaultView(app.store.data.range));
+  const graph = new PitchGraph(canvas, defaultView(null));
   let follow = true;
 
   const dot = h('i', { class: 'monitor-dot' });
@@ -157,7 +157,7 @@ export function monitorScreen(app: App): Screen {
               class: 'btn ghost',
               onclick: () => {
                 follow = true;
-                setView(clampView(defaultView(app.store.data.range)), false);
+                setView(clampView(defaultView(null)), false);
               },
             },
             'Reset',

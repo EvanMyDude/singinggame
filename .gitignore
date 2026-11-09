@@ -4,3 +4,10 @@ dist/
 .DS_Store
 /test-results/
 /playwright-report/
+
+# Song pack media and lyric text stay local (copyrighted material is not published with the site).
+# Derived data (melody.json, timing.json) is committed. See docs/SONG_PACK.md.
+public/songs/*/*.mp3
+public/songs/*/*.m4a
+public/songs/*/*.wav
+public/songs/*/lyrics.txt

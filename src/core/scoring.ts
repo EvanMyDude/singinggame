@@ -172,6 +172,11 @@ export class ScoreEngine {
     return this.o.noteFrom;
   }
 
+  /** AudioContext time at which `startBeat` sounds (after any rebase). */
+  get t0(): number {
+    return this.o.t0;
+  }
+
   get noteTo(): number {
     return this.o.noteTo;
   }

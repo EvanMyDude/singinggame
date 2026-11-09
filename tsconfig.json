@@ -13,6 +13,7 @@
     "exactOptionalPropertyTypes": false,
     "isolatedModules": true,
     "skipLibCheck": true,
+    "resolveJsonModule": true,
     "noEmit": true
   },
   "include": ["src", "tests", "vite.config.ts"]

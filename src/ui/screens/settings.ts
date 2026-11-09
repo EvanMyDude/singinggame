@@ -1,9 +1,8 @@
 import { listMics } from '../../audio/mic';
-import { noteNameWithOctave } from '../../core/music';
-import { voiceTypeFor } from '../../core/range';
 import type { Settings } from '../../core/storage';
 import type { App, Screen } from '../app';
-import { backButton, h, slider, toggle } from '../dom';
+import { packFilesCard } from '../components/packFiles';
+import { backButton, h, icon, slider, toggle } from '../dom';
 import { gateFromSensitivity, sensitivityFromGate } from './setup';
 
 export function settingsScreen(app: App): Screen {
@@ -21,7 +20,7 @@ export function settingsScreen(app: App): Screen {
       h('div', { class: 'row', style: 'flex-wrap:nowrap' }, ...(Array.isArray(control) ? control : [control])),
     );
 
-  const volume = (key: 'backingVol' | 'melodyVol' | 'clickVol' | 'monitorVol', label: string) => {
+  const volume = (key: 'musicVol' | 'monitorVol', label: string) => {
     const val = h('span', { class: 'val' }, `${Math.round(s()[key] * 100)}%`);
     return [
       slider({
@@ -83,7 +82,12 @@ export function settingsScreen(app: App): Screen {
     },
   });
 
-  const range = app.store.data.range;
+  const lyricStatus = h('div', { class: 'desc' });
+  const renderLyricStatus = () => {
+    const p = app.pack;
+    lyricStatus.textContent = !p ? 'Load the song files first.' : !p.lyrics ? 'No lyrics loaded: add lyrics.txt above or in the sync tool.' : !p.timing ? `${p.lyrics.lines.length} lines loaded, not synced yet.` : `${p.lyrics.lines.length} lines, synced (${p.sources.timing === 'static' ? 'timing.json in project' : 'saved in this browser'}).`;
+  };
+  renderLyricStatus();
 
   const el = h(
     'div',
@@ -121,19 +125,15 @@ export function settingsScreen(app: App): Screen {
             if (app.micReady) await app.openMic();
           }),
         ),
-        row('Microphone monitoring', 'Hear yourself in your headphones. Off by default; only available with headphones to avoid feedback.', monitorToggle),
+        row('Microphone monitoring', 'Hear yourself in your headphones. Only with headphones, to avoid feedback.', monitorToggle),
         row('Monitor volume', null, volume('monitorVol', 'Monitor volume')),
-        h('div', { class: 'row', style: 'margin-top:12px' }, h('button', { class: 'btn', onclick: () => app.go({ name: 'setup' }) }, 'Open mic check')),
+        h('div', { class: 'row', style: 'margin-top:12px' }, h('button', { class: 'btn', onclick: () => app.go({ name: 'setup', next: { name: 'settings' } }) }, 'Open mic check')),
       ),
       h(
         'div',
         { class: 'card' },
-        h('div', { class: 'panel-title' }, 'Audio mix'),
-        row('Backing band', null, volume('backingVol', 'Backing volume')),
-        row('Guide melody', 'The target tune played for you.', volume('melodyVol', 'Melody volume')),
-        row('Count-in clicks', null, volume('clickVol', 'Click volume')),
-        h('div', { class: 'divider' }),
-        h('div', { class: 'panel-title', style: 'margin-top:14px' }, 'Timing'),
+        h('div', { class: 'panel-title' }, 'Music and timing'),
+        row('Music volume', 'Instrumental and reference track.', volume('musicVol', 'Music volume')),
         row('Latency offset', 'Round-trip audio delay removed before scoring.', [latSlider, latVal]),
         h(
           'div',
@@ -141,36 +141,33 @@ export function settingsScreen(app: App): Screen {
           h('button', { class: 'btn', onclick: () => app.go({ name: 'latency', next: { name: 'settings' } }) }, 'Calibrate latency'),
           h('button', { class: 'btn ghost', onclick: () => { set({ latencyMs: null }); latVal.textContent = 'auto'; } }, 'Use automatic'),
         ),
-      ),
-      h(
-        'div',
-        { class: 'card' },
-        h('div', { class: 'panel-title' }, 'Voice'),
-        row(
-          'Vocal range',
-          range ? `${noteNameWithOctave(range.low)}–${noteNameWithOctave(range.high)} · ${voiceTypeFor(range)} (${app.store.data.rangeSource ?? ''})` : 'Not set: songs play in their written keys.',
-          h('button', { class: 'btn', onclick: () => app.go({ name: 'range', next: { name: 'settings' } }) }, range ? 'Redo' : 'Check range'),
-        ),
+        h('div', { class: 'divider', style: 'margin:14px 0' }),
+        h('div', { class: 'panel-title' }, 'Scoring and display'),
         row('Octave forgiveness', 'Singing the right note in another octave counts as correct.', toggle('', s().foldOctaves, (v) => set({ foldOctaves: v }))),
-        row('Show note names', 'Label the pitch lanes during play.', toggle('', s().showNoteNames, (v) => set({ showNoteNames: v }))),
+        row('Show note names', 'Label the pitch lanes while singing.', toggle('', s().showNoteNames, (v) => set({ showNoteNames: v }))),
       ),
+      packFilesCard(app, renderLyricStatus),
       h(
         'div',
         { class: 'card' },
+        h('div', { class: 'panel-title' }, 'Lyrics'),
+        row('Lyric timing', null, h('button', { class: 'btn', onclick: () => app.go({ name: 'sync' }) }, icon('lyrics', 'kbd-icon'), 'Sync lyrics')),
+        lyricStatus,
+        h('div', { class: 'divider', style: 'margin:14px 0' }),
         h('div', { class: 'panel-title' }, 'Data'),
-        h('p', { class: 'muted small', style: 'margin-top:0' }, 'Settings, range, latency, high scores and imported songs are stored only in this browser. Nothing is sent anywhere.'),
+        h('p', { class: 'muted small', style: 'margin-top:0' }, 'Settings, latency, scores and song files are stored only in this browser. Nothing is sent anywhere.'),
         h(
           'button',
           {
             class: 'btn danger',
             onclick: () => {
-              if (confirm('Erase all settings, scores, range and imported songs from this browser?')) {
+              if (confirm('Erase settings, latency and scores from this browser? (Song files stay; remove them above.)')) {
                 app.store.resetAll();
                 app.go({ name: 'home' });
               }
             },
           },
-          'Reset all data',
+          'Reset settings and scores',
         ),
       ),
     ),

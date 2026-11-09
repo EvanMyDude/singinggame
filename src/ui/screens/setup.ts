@@ -12,7 +12,7 @@ export function levelPct(db: number): number {
 }
 
 export function setupScreen(app: App, route: Route): Screen {
-  const next: Route = (route.name === 'setup' && route.next) || { name: 'songs' };
+  const next: Route = (route.name === 'setup' && route.next) || { name: 'home' };
   const s = () => app.store.settings;
   const body = h('div', { class: 'stack' });
   let cleanup: (() => void) | null = null;
@@ -21,7 +21,6 @@ export function setupScreen(app: App, route: Route): Screen {
     'div',
     { class: 'screen', style: 'max-width:760px' },
     h('div', { class: 'topbar' }, backButton(() => app.go({ name: 'home' })), h('div', { class: 'spacer' })),
-    flowSteps(route, 0),
     h('h2', { style: 'font-size:32px;margin-bottom:6px' }, 'Microphone check'),
     h('p', { class: 'muted', style: 'margin:0 0 20px' }, 'Pitch detection runs entirely in this browser tab. No audio is recorded or uploaded.'),
     body,
@@ -32,7 +31,7 @@ export function setupScreen(app: App, route: Route): Screen {
       h(
         'div',
         { class: 'card stack' },
-        h('p', { style: 'margin:0' }, 'Pitchline needs your microphone to hear your pitch. Your browser will ask for permission.'),
+        h('p', { style: 'margin:0' }, 'Pitch Hero needs your microphone to hear your pitch. Your browser will ask for permission.'),
         error ? h('div', { class: 'notice bad' }, error) : null,
         h(
           'div',
@@ -166,7 +165,7 @@ export function setupScreen(app: App, route: Route): Screen {
         'div',
         { class: 'row' },
         h('div', { class: 'grow' }),
-        h('button', { class: 'btn primary big', onclick: () => app.go(next) }, next.name === 'play' ? 'Start' : 'Continue'),
+        h('button', { class: 'btn primary big', onclick: () => app.go(next) }, next.name === 'sing' ? 'Start' : 'Continue'),
       ),
     );
 
@@ -231,13 +230,4 @@ export function setupScreen(app: App, route: Route): Screen {
   else renderAsk(null);
 
   return { el, destroy: () => cleanup?.() };
-}
-
-/** Step dots for the first-run flow (mic -> range -> songs). */
-export function flowSteps(route: Route, index: number): HTMLElement | null {
-  const inFlow = 'next' in route && route.next !== undefined;
-  if (!inFlow) return null;
-  const total = route.name === 'setup' && route.next?.name === 'range' ? 2 : route.name === 'range' && index === 1 ? 2 : 1;
-  if (total < 2) return null;
-  return h('div', { class: 'steps', 'aria-hidden': 'true' }, ...Array.from({ length: total }, (_, i) => h('i', { class: i <= index ? 'on' : '' })));
 }
