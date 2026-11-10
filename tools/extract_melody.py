@@ -299,12 +299,14 @@ def phrases_from(voiced: np.ndarray, times: np.ndarray, hop_s: float, gap: float
 
 
 GATE_REASONS = ("pyinUnvoiced", "trackersDisagree", "tooShort", "unstable")
+DISAGREE_KINDS = ("octave", "near", "other")
 
 
 def gate_report(
     present: np.ndarray,
     pyin_voiced: np.ndarray,
     agree: np.ndarray,
+    diff: np.ndarray,
     stable: list[NoteSeg],
     unstable: list[NoteSeg],
     hop_s: float,
@@ -319,6 +321,14 @@ def gate_report(
       trackersDisagree  pYIN and the salience tracker differ by 60 cents or more
       tooShort          the trackers agree, but the pitch did not hold for a whole 100 ms note
       unstable          a note-length segment whose pitch wandered too much (MAD > 35 cents)
+
+    `diff` is pYIN minus salience in semitones (NaN where pYIN is unvoiced). It splits the
+    trackersDisagree frames by how the two trackers differ:
+
+      octave  one or two octaves apart (within 60 cents): one tracker locked onto a harmonic
+              or subharmonic of the same note, so the pitch class is known but the octave is not
+      near    0.6 to 1.5 semitones apart: both follow the same pitch, typically during a slide
+      other   anything else: at least one tracker is following something that is not the vocal
 
     Returns the totals in seconds and the same breakdown for every stretch of at least
     `min_gap` seconds without a target, so a gap can be judged before any threshold is touched.
@@ -342,6 +352,12 @@ def gate_report(
         "trackersDisagree": lost & ~in_unstable & ~voiced & pyin_voiced,
     }
 
+    ad = np.abs(np.nan_to_num(diff, nan=0.0))
+    dis = reason["trackersDisagree"]
+    octave = dis & ((np.abs(ad - 12) < 0.6) | (np.abs(ad - 24) < 0.6))
+    near = dis & (ad < 1.5)
+    kind = {"octave": octave, "near": near, "other": dis & ~octave & ~near}
+
     def secs(mask: np.ndarray, a: int = 0, b: int | None = None) -> float:
         return round(float(mask[a:b].sum() * hop_s), 2)
 
@@ -351,10 +367,11 @@ def gate_report(
         if b - a < min_gap:
             continue
         i, j = int(round(a / hop_s)), min(n, int(round(b / hop_s)))
-        gaps.append({"t": round(a, 3), "e": round(b, 3), "present": secs(present, i, j), **{k: secs(reason[k], i, j) for k in GATE_REASONS}})
+        gaps.append({"t": round(a, 3), "e": round(b, 3), "present": secs(present, i, j), **{k: secs(reason[k], i, j) for k in GATE_REASONS}, "disagree": {k: secs(kind[k], i, j) for k in DISAGREE_KINDS}})
     return {
         "agreeSeconds": secs(voiced),
         "lostSeconds": {k: secs(reason[k]) for k in GATE_REASONS},
+        "disagreeSeconds": {k: secs(kind[k]) for k in DISAGREE_KINDS},
         "gaps": gaps,
     }
 
@@ -468,10 +485,11 @@ def main() -> int:
 
     log(f"vocal present: {present.mean() * 100:.1f}% of frames ({present.sum() * hop_s:.1f} s); trackers agree on {voiced.mean() * 100:.1f}% ({voiced.sum() * hop_s:.1f} s)")
     duration = len(inst_a) / SR
-    gates = gate_report(present, pyin_voiced, agree, stable, unstable, hop_s, duration)
+    gates = gate_report(present, pyin_voiced, agree, midi_p - midi_s, stable, unstable, hop_s, duration)
     log("present but not scored (s): " + ", ".join(f"{k} {v:.1f}" for k, v in gates["lostSeconds"].items()))
+    log("trackersDisagree split (s): " + ", ".join(f"{k} {v:.1f}" for k, v in gates["disagreeSeconds"].items()))
     for g in sorted(gates["gaps"], key=lambda g: g["t"] - g["e"])[:8]:
-        log(f"  gap {g['t']:7.2f}-{g['e']:7.2f} s: vocal present {g['present']:.1f} s; " + ", ".join(f"{k} {g[k]:.1f}" for k in GATE_REASONS))
+        log(f"  gap {g['t']:7.2f}-{g['e']:7.2f} s: vocal present {g['present']:.1f} s; " + ", ".join(f"{k} {g[k]:.1f}" for k in GATE_REASONS) + " (disagree: " + ", ".join(f"{k} {g['disagree'][k]:.1f}" for k in DISAGREE_KINDS) + ")")
     log(f"notes: {len(stable)} stable (+{len(unstable)} unstable dropped), phrases: {len(phr)}")
     if stable:
         ms = [s.midi for s in stable]

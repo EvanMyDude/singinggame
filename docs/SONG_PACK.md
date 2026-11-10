@@ -53,7 +53,9 @@ To see why a passage has no targets, read `analysis` in `melody.json` after `mak
 not scored by the gate that rejected it: `pyinUnvoiced` (no pitch found, typical of spoken
 delivery), `trackersDisagree` (the two pitch trackers differ by 60 cents or more), `tooShort`
 (agreed pitch that did not hold for 100 ms) and `unstable` (a note-length segment that wandered).
-`gaps` gives the same breakdown for every stretch of 2 s or more without a target. Check these
+`disagreeSeconds` splits `trackersDisagree` by how the trackers differ: `octave` (one or two
+octaves apart, so only the octave is in doubt), `near` (0.6 to 1.5 semitones, typically a slide)
+and `other` (unrelated pitches). `gaps` gives the same breakdown for every stretch of 2 s or more without a target. Check these
 before changing any threshold. The app ignores `analysis`.
 
 ## Lyric timing

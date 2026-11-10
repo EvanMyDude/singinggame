@@ -12,4 +12,5 @@ public/songs/*/*.m4a
 public/songs/*/*.wav
 public/songs/*/lyrics.txt
 __pycache__/
+.venv/
 *.pyc
