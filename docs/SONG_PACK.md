@@ -46,6 +46,15 @@ offset between the two files (the reference track leads by 45.8 ms) and the temp
 
 Passages where the extraction is not confident (spoken delivery, dense backing) are left
 without target notes: the lyrics and the live pitch trace still show, but they are not scored.
+The results screen states how many targets and seconds the grade rests on, per section too.
+
+To see why a passage has no targets, read `analysis` in `melody.json` after `make extract`
+(the same numbers are printed while it runs). `lostSeconds` splits the detected vocal that was
+not scored by the gate that rejected it: `pyinUnvoiced` (no pitch found, typical of spoken
+delivery), `trackersDisagree` (the two pitch trackers differ by 60 cents or more), `tooShort`
+(agreed pitch that did not hold for 100 ms) and `unstable` (a note-length segment that wandered).
+`gaps` gives the same breakdown for every stretch of 2 s or more without a target. Check these
+before changing any threshold. The app ignores `analysis`.
 
 ## Lyric timing
 

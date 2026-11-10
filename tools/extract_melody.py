@@ -22,6 +22,9 @@ How it works
   5. The frame track is segmented into notes (stable pitch for at least 100 ms); unstable
      or glissando-like stretches are not scored, since a target that is not a note would
      only produce noise in the score.
+  6. Diagnostics: `analysis` in the output records how many seconds of detected vocal each
+     gate rejected, overall and for every stretch of 2 s or more without a target (see
+     gate_report). Read these before changing a threshold; the app ignores them.
 
 Dependencies: numpy, scipy, librosa (>= 0.10), soundfile (libsndfile with MP3 support).
 """
@@ -295,6 +298,67 @@ def phrases_from(voiced: np.ndarray, times: np.ndarray, hop_s: float, gap: float
     return out
 
 
+GATE_REASONS = ("pyinUnvoiced", "trackersDisagree", "tooShort", "unstable")
+
+
+def gate_report(
+    present: np.ndarray,
+    pyin_voiced: np.ndarray,
+    agree: np.ndarray,
+    stable: list[NoteSeg],
+    unstable: list[NoteSeg],
+    hop_s: float,
+    duration: float,
+    min_gap: float = 2.0,
+) -> dict:
+    """
+    Why detected vocal did not become target notes. Every frame where the vocal is present but
+    that lies outside a kept note is assigned the first gate that rejected it:
+
+      pyinUnvoiced      pYIN found no pitch (typical of spoken or breathy delivery)
+      trackersDisagree  pYIN and the salience tracker differ by 60 cents or more
+      tooShort          the trackers agree, but the pitch did not hold for a whole 100 ms note
+      unstable          a note-length segment whose pitch wandered too much (MAD > 35 cents)
+
+    Returns the totals in seconds and the same breakdown for every stretch of at least
+    `min_gap` seconds without a target, so a gap can be judged before any threshold is touched.
+    """
+    n = len(present)
+
+    def span_mask(segs: list[NoteSeg]) -> np.ndarray:
+        m = np.zeros(n, dtype=bool)
+        for s in segs:
+            m[max(0, int(round(s.start / hop_s))) : min(n, int(round(s.end / hop_s)))] = True
+        return m
+
+    in_note = span_mask(stable)
+    in_unstable = span_mask(unstable) & ~in_note
+    lost = present & ~in_note
+    voiced = present & agree
+    reason = {
+        "unstable": lost & in_unstable,
+        "tooShort": lost & ~in_unstable & voiced,
+        "pyinUnvoiced": lost & ~in_unstable & ~voiced & ~pyin_voiced,
+        "trackersDisagree": lost & ~in_unstable & ~voiced & pyin_voiced,
+    }
+
+    def secs(mask: np.ndarray, a: int = 0, b: int | None = None) -> float:
+        return round(float(mask[a:b].sum() * hop_s), 2)
+
+    edges = [0.0] + [x for s in sorted(stable, key=lambda s: s.start) for x in (s.start, s.end)] + [duration]
+    gaps = []
+    for a, b in zip(edges[0::2], edges[1::2]):
+        if b - a < min_gap:
+            continue
+        i, j = int(round(a / hop_s)), min(n, int(round(b / hop_s)))
+        gaps.append({"t": round(a, 3), "e": round(b, 3), "present": secs(present, i, j), **{k: secs(reason[k], i, j) for k in GATE_REASONS}})
+    return {
+        "agreeSeconds": secs(voiced),
+        "lostSeconds": {k: secs(reason[k]) for k in GATE_REASONS},
+        "gaps": gaps,
+    }
+
+
 KEY_PROFILES = {
     "major": np.array([6.35, 2.23, 3.48, 2.33, 4.38, 4.09, 2.52, 5.19, 2.39, 3.66, 2.29, 2.88]),
     "minor": np.array([6.33, 2.68, 3.52, 5.38, 2.60, 3.53, 2.54, 4.75, 3.98, 2.69, 3.34, 3.17]),
@@ -379,7 +443,8 @@ def main() -> int:
     midi_p = np.where(np.isfinite(f0p), 69 + 12 * np.log2(np.where(np.isfinite(f0p), f0p, 440) / 440), np.nan)
     # Two independent trackers must agree (within 60 cents, no octave forgiveness) for a frame
     # to become part of a scored note; disagreement means the target is not trustworthy there.
-    agree = vflag & np.isfinite(midi_p) & (np.abs(midi_p - midi_s) < 0.6)
+    pyin_voiced = vflag & np.isfinite(midi_p)
+    agree = pyin_voiced & (np.abs(midi_p - midi_s) < 0.6)
     voiced = present & agree
     midi = np.where(agree, (midi_s + midi_p) / 2, midi_s)
     from scipy.ndimage import median_filter
@@ -402,6 +467,11 @@ def main() -> int:
         hist[s.midi % 12] += s.end - s.start
 
     log(f"vocal present: {present.mean() * 100:.1f}% of frames ({present.sum() * hop_s:.1f} s); trackers agree on {voiced.mean() * 100:.1f}% ({voiced.sum() * hop_s:.1f} s)")
+    duration = len(inst_a) / SR
+    gates = gate_report(present, pyin_voiced, agree, stable, unstable, hop_s, duration)
+    log("present but not scored (s): " + ", ".join(f"{k} {v:.1f}" for k, v in gates["lostSeconds"].items()))
+    for g in sorted(gates["gaps"], key=lambda g: g["t"] - g["e"])[:8]:
+        log(f"  gap {g['t']:7.2f}-{g['e']:7.2f} s: vocal present {g['present']:.1f} s; " + ", ".join(f"{k} {g[k]:.1f}" for k in GATE_REASONS))
     log(f"notes: {len(stable)} stable (+{len(unstable)} unstable dropped), phrases: {len(phr)}")
     if stable:
         ms = [s.midi for s in stable]
@@ -416,7 +486,7 @@ def main() -> int:
             sig.update(hashlib.sha1(fh.read()).digest())
     out = {
         "version": 1,
-        "duration": round(len(inst_a) / SR, 3),
+        "duration": round(duration, 3),
         # Reference (full mix) time = song time + referenceOffset.
         "referenceOffset": round(lag / SR, 4),
         "key": {"tonic": tonic, "mode": mode},
@@ -427,7 +497,7 @@ def main() -> int:
         "notes": [{"t": round(s.start, 3), "d": round(s.end - s.start, 3), "m": s.midi, "c": round(s.median - s.midi, 3)} for s in stable],
         "phrases": [{"t": round(a, 3), "e": round(b, 3)} for a, b in phr],
         "sources": sig.hexdigest()[:12],
-        "analysis": {"alignment": {k: (round(float(v), 3) if isinstance(v, (float, np.floating)) else v) for k, v in info.items()}, "presentSeconds": round(float(present.sum() * hop_s), 1), "scoredSeconds": round(float(sum(x.end - x.start for x in stable)), 1), "unstableDropped": len(unstable)},
+        "analysis": {"alignment": {k: (round(float(v), 3) if isinstance(v, (float, np.floating)) else v) for k, v in info.items()}, "presentSeconds": round(float(present.sum() * hop_s), 1), "scoredSeconds": round(float(sum(x.end - x.start for x in stable)), 1), "unstableDropped": len(unstable), **gates},
     }
     with open(args.out, "w") as fh:
         json.dump(out, fh, separators=(",", ":"))

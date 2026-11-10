@@ -1,5 +1,5 @@
 import { keyPrefersFlats, noteNameWithOctave } from '../../core/music';
-import type { SectionSpec } from '../../core/melody';
+import { fmtSpan, fmtTime, targetCoverage, type SectionSpec } from '../../core/melody';
 import { THRESHOLDS, phraseInsights, pitchInsights, weakestSection, type Counts, type Judgment, type NoteResult, type PhraseInsight, type PitchInsight } from '../../core/scoring';
 import type { Song } from '../../core/song';
 import { SONG } from '../../core/songpack';
@@ -12,6 +12,8 @@ export interface AttemptResult {
   config: SessionConfig;
   song: Song;
   sections: SectionSpec[];
+  /** Length of the track (s). */
+  duration: number;
   score: number;
   accuracy: number;
   timing: number;
@@ -75,6 +77,9 @@ export function resultsScreen(app: App, route: Route): Screen {
         )
       : null;
   const total = r.notes.length;
+  // What the grade rests on: targets exist only where the melody could be extracted reliably.
+  const cover = targetCoverage(song);
+  const targetWord = cover.notes === 1 ? 'pitch target' : 'pitch targets';
   const hit = r.counts.perfect + r.counts.great + r.counts.good;
 
   const el = h(
@@ -85,15 +90,20 @@ export function resultsScreen(app: App, route: Route): Screen {
       'section',
       { class: 'results-hero' },
       h('div', { class: `big-grade grade-${r.grade}` }, r.grade),
-      h('div', { class: 'stack', style: 'gap:8px' }, h('div', { class: 'muted' }, `${SONG.title} · full song`), scoreEl, bestLine),
+      h('div', { class: 'stack', style: 'gap:8px' }, h('div', { class: 'muted' }, `${SONG.title} · scored on ${cover.notes} ${targetWord}, ${fmtSpan(cover.seconds)} of ${fmtTime(r.duration)}`), scoreEl, bestLine),
     ),
     h(
       'div',
       { class: 'stat-grid', style: 'margin-top:24px' },
-      stat('Pitch accuracy', `${Math.round(r.accuracy)}%`),
+      stat('Pitch accuracy (on targets)', `${Math.round(r.accuracy)}%`),
       stat('Timing accuracy', `${Math.round(r.timing)}%`),
       stat('Best streak', String(r.bestStreak)),
-      stat('Notes hit', `${hit}/${total}`),
+      stat('Targets hit', `${hit}/${total}`),
+    ),
+    h(
+      'div',
+      { class: 'notice', style: 'margin-top:12px' },
+      `Only the ${cover.notes} ${targetWord} are graded. They cover ${fmtSpan(cover.seconds)} of this ${fmtTime(r.duration)} track. Passages where the melody could not be extracted reliably from the reference recording have no targets, and singing there cannot lower your grade.`,
     ),
     latencyHint,
     h(
@@ -136,7 +146,6 @@ export function resultsScreen(app: App, route: Route): Screen {
       ...timelineRows(song, r, nn),
     ),
     fullRuns.length >= 2 ? h('div', { class: 'card', style: 'margin-top:14px' }, sparkline(fullRuns)) : null,
-    h('p', { class: 'faint tiny', style: 'margin-top:18px' }, 'Only passages where the melody could be extracted reliably from the reference recording are scored; the rest of the song is free.'),
   );
 
   const onKey = (e: KeyboardEvent) => {
@@ -173,7 +182,22 @@ function legend(): HTMLElement {
 function timelineRows(song: Song, r: AttemptResult, nn: (m: number) => string): HTMLElement[] {
   const byIndex = new Map(r.notes.map((n) => [n.index, n]));
   const rows: HTMLElement[] = [];
-  for (const sec of song.sections) {
+  song.sections.forEach((sec, si) => {
+    const spec = r.sections[si];
+    const span = spec ? fmtSpan(spec.end - spec.start) : '';
+    if (sec.noteTo <= sec.noteFrom) {
+      // A section without targets is shown, not hidden: it was sung but could not be graded.
+      rows.push(
+        h(
+          'div',
+          { class: 'timeline-row' },
+          h('div', null, h('div', { style: 'font-weight:600' }, sec.name), h('div', { class: 'faint tiny' }, 'not scored')),
+          h('div', { class: 'faint small' }, `No pitch targets${span ? ` in this ${span} section` : ''}. Free singing; it does not affect your grade.`),
+        ),
+      );
+      return;
+    }
+    const cov = targetCoverage(song, sec.noteFrom, sec.noteTo);
     const dots: HTMLElement[] = [];
     for (let i = sec.noteFrom; i < sec.noteTo; i++) {
       const n = byIndex.get(i);
@@ -186,18 +210,25 @@ function timelineRows(song: Song, r: AttemptResult, nn: (m: number) => string): 
           : `${Math.round(Math.abs(bias))} cents ${bias > 0 ? 'sharp' : 'flat'} · ${Math.round(n.accuracy * 100)}%${n.onset !== null ? ` · entered ${Math.round(n.onset * 1000)} ms ${n.onset >= 0 ? 'after' : 'before'} the note` : ''}`;
       dots.push(h('span', { class: `tdot ${n.judgment}`, title: `${nn(n.midi)} · ${LABEL[n.judgment]} · ${detail}` }, h('span', { class: 'dir' }, dir)));
     }
-    if (!dots.length) continue;
+    if (!dots.length) return;
     const acc = r.notes.filter((n) => n.index >= sec.noteFrom && n.index < sec.noteTo);
     const pct = acc.length ? Math.round((100 * acc.reduce((s, n) => s + n.accuracy * n.beats, 0)) / acc.reduce((s, n) => s + n.beats, 0)) : 0;
     rows.push(
       h(
         'div',
         { class: 'timeline-row' },
-        h('div', null, h('div', { style: 'font-weight:600' }, sec.name), h('div', { class: 'faint tiny' }, `${pct}%`)),
+        h(
+          'div',
+          null,
+          h('div', { style: 'font-weight:600' }, sec.name),
+          h('div', { class: 'faint tiny' }, `${pct}%`),
+          h('div', { class: 'faint tiny' }, `${cov.notes} ${cov.notes === 1 ? 'target' : 'targets'}`),
+          h('div', { class: 'faint tiny' }, `${fmtSpan(cov.seconds)}${span ? ` of ${span}` : ''}`),
+        ),
         h('div', { class: 'timeline-dots' }, ...dots),
       ),
     );
-  }
+  });
   return rows;
 }
 

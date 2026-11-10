@@ -163,6 +163,33 @@ export function melodyToSong(melody: MelodyData, id: string, title: string, sect
   return { ...base, sections: secs };
 }
 
+export interface TargetCoverage {
+  /** Number of target notes. */
+  notes: number;
+  /** Their total duration in seconds at the written tempo. */
+  seconds: number;
+}
+
+/**
+ * How much of the song is actually graded: the count and total duration of the target notes
+ * in [from, to). Everything outside the targets is free singing, so the results screen shows
+ * this next to the grade instead of implying the whole track was scored.
+ */
+export function targetCoverage(song: Pick<Song, 'notes' | 'bpm'>, from = 0, to = song.notes.length): TargetCoverage {
+  let beats = 0;
+  let notes = 0;
+  for (let i = Math.max(0, from); i < Math.min(to, song.notes.length); i++) {
+    beats += song.notes[i]!.beats;
+    notes++;
+  }
+  return { notes, seconds: (beats * 60) / song.bpm };
+}
+
+/** "43 s" below a minute and a half, else "1:35". */
+export function fmtSpan(seconds: number): string {
+  return seconds < 90 ? `${Math.round(seconds)} s` : fmtTime(seconds);
+}
+
 /** Onset times (s) useful for snapping lyric taps: note starts and phrase starts. */
 export function vocalOnsets(melody: MelodyData): number[] {
   const set = new Set<number>();

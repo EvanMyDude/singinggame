@@ -543,6 +543,7 @@ export function singScreen(app: App, route: Route): Screen {
       config: { ...config },
       song,
       sections,
+      duration: melody.duration,
       score: record.score,
       accuracy,
       timing: record.timing,

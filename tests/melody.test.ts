@@ -1,7 +1,7 @@
 import melodyJson from '../public/songs/old-town-road/melody.json';
 import { describe, expect, it } from 'vitest';
 import { parseLyrics } from '../src/core/lyrics';
-import { BeatMap, buildSections, melodyToSong, parseMelody, vocalOnsets, type MelodyData } from '../src/core/melody';
+import { BeatMap, buildSections, fmtSpan, melodyToSong, parseMelody, targetCoverage, vocalOnsets, type MelodyData } from '../src/core/melody';
 
 const SAMPLE: MelodyData = {
   version: 1,
@@ -83,5 +83,37 @@ describe('sections and song conversion', () => {
   });
   it('lists unique onsets for tap snapping', () => {
     expect(vocalOnsets(SAMPLE)).toEqual([1, 1.5, 4.5, 5, 12]);
+  });
+});
+
+describe('target coverage', () => {
+  it('reports how many notes and seconds are graded, overall and per section', () => {
+    const map = new BeatMap(SAMPLE);
+    const specs = [
+      { name: 'A', start: 0, end: 4 },
+      { name: 'B', start: 4, end: 8 },
+      { name: 'Gap', start: 8, end: 11 },
+      { name: 'C', start: 11, end: 20 },
+    ];
+    const song = melodyToSong(SAMPLE, 'x', 'X', specs, map);
+    const all = targetCoverage(song);
+    expect(all.notes).toBe(4);
+    expect(all.seconds).toBeCloseTo(2.5, 9);
+    const per = song.sections.map((s) => targetCoverage(song, s.noteFrom, s.noteTo));
+    expect(per.map((c) => c.notes)).toEqual([2, 1, 0, 1]);
+    expect(per[0]!.seconds).toBeCloseTo(1, 9);
+    expect(per[2]!.seconds).toBe(0);
+  });
+  it('matches the extractor summary for the committed melody', () => {
+    const m = parseMelody(melodyJson);
+    const song = melodyToSong(m, 'x', 'X', [{ name: 'Whole song', start: 0, end: m.duration }], new BeatMap(m));
+    const c = targetCoverage(song);
+    expect(c.notes).toBe(m.notes.length);
+    expect(c.seconds).toBeCloseTo(m.notes.reduce((s, n) => s + n.d, 0), 6);
+    expect(c.seconds).toBeLessThan(m.duration / 2);
+  });
+  it('formats spans', () => {
+    expect(fmtSpan(43.3)).toBe('43 s');
+    expect(fmtSpan(157.683)).toBe('2:37');
   });
 });
