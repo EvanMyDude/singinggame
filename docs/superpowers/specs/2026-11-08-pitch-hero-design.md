@@ -70,8 +70,27 @@ file carries verified word times (`words` per line); none is faked.
 
 Result for this song: 174 notes, 43 s of scorable melody out of 92 s of detected vocal; range
 A♯2–D♯4; 168/174 notes in the detected key (F♯ major); mean tuning deviation 0 cents. Passages
-where the trackers disagree (rap-like delivery) are left unscored rather than scored against a
-guess. `melody.json` also carries tempo (136 BPM, for bar lines), the reference offset and the
+that fail a gate are left unscored rather than scored against a guess.
+
+Measured on 2026-11-10 with the extractor's gate diagnostics (same source files, hash
+`594c7e902d9a`; that run produced 175 notes because of library version differences), the roughly 48.5 s
+of detected vocal without targets split as follows:
+
+| Rejected because | Seconds |
+| --- | --- |
+| pYIN found no pitch (spoken or breathy delivery) | 18.1 |
+| Trackers on unrelated pitches | 13.7 |
+| Trackers one or two octaves apart | 8.9 |
+| Agreed pitch shorter than a 100 ms note | 6.2 |
+| Trackers 0.6 to 1.5 semitones apart (slides) | 1.4 |
+| Note-length segment too unstable | 0.3 |
+
+Two thirds (31.8 s) has no pitch or no agreement on one, so it cannot become targets without
+guessing. The length and stability thresholds are not the limit: in the eight longest gaps they
+reject at most 0.1 s each. Octave ambiguity is the only pool that could be recovered, and it is
+at most 8.9 s overall and 0.1 to 1.1 s inside each verse gap, so it would not close those gaps.
+The results screen therefore states what the grade rests on instead of the extractor being
+loosened. `melody.json` also carries tempo (136 BPM, for bar lines), the reference offset and the
 vocal phrase list used by the lyric sync tool.
 
 ## 5. Two tracks in sync

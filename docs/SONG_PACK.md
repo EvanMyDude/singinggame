@@ -56,7 +56,7 @@ delivery), `trackersDisagree` (the two pitch trackers differ by 60 cents or more
 `disagreeSeconds` splits `trackersDisagree` by how the trackers differ: `octave` (one or two
 octaves apart, so only the octave is in doubt), `near` (0.6 to 1.5 semitones, typically a slide)
 and `other` (unrelated pitches). `gaps` gives the same breakdown for every stretch of 2 s or more without a target. Check these
-before changing any threshold. The app ignores `analysis`.
+before changing any threshold; the figures for this song are in the design spec (section 4). The app ignores `analysis`.
 
 ## Lyric timing
 
