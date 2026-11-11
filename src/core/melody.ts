@@ -34,6 +34,8 @@ export interface MelodyData {
   tuningCents: number;
   notes: MelodyNote[];
   phrases: MelodyPhrase[];
+  /** Optional detected reference-vocal time, not phrase spans or user voicing. */
+  analysis?: { presentSeconds: number };
 }
 
 export function parseMelody(json: unknown): MelodyData {
@@ -46,6 +48,8 @@ export function parseMelody(json: unknown): MelodyData {
     .sort((a, b) => a.t - b.t);
   const phrases: MelodyPhrase[] = Array.isArray(m.phrases) ? m.phrases.filter((p) => p && typeof p.t === 'number' && typeof p.e === 'number') : [];
   const bpm = typeof m.bpm === 'number' && m.bpm > 20 ? m.bpm : 120;
+  const targetSeconds = unionLength(notes.map((n) => [n.t, n.t + n.d]));
+  const presentSeconds = validVocalSeconds(m.analysis?.presentSeconds, m.duration, targetSeconds);
   return {
     version: 1,
     duration: m.duration,
@@ -56,6 +60,7 @@ export function parseMelody(json: unknown): MelodyData {
     tuningCents: typeof m.tuningCents === 'number' ? m.tuningCents : 0,
     notes,
     phrases,
+    ...(presentSeconds !== null ? { analysis: { presentSeconds } } : {}),
   };
 }
 
@@ -166,28 +171,59 @@ export function melodyToSong(melody: MelodyData, id: string, title: string, sect
 export interface TargetCoverage {
   /** Number of target notes. */
   notes: number;
-  /** Their total duration in seconds at the written tempo. */
+  /** Union of target intervals in seconds at the written tempo. */
   seconds: number;
 }
 
 /**
- * How much of the song is actually graded: the count and total duration of the target notes
+ * How much of the song is actually graded: the count and union duration of the target notes
  * in [from, to). Everything outside the targets is free singing, so the results screen shows
  * this next to the grade instead of implying the whole track was scored.
  */
 export function targetCoverage(song: Pick<Song, 'notes' | 'bpm'>, from = 0, to = song.notes.length): TargetCoverage {
-  let beats = 0;
-  let notes = 0;
-  for (let i = Math.max(0, from); i < Math.min(to, song.notes.length); i++) {
-    beats += song.notes[i]!.beats;
-    notes++;
-  }
-  return { notes, seconds: (beats * 60) / song.bpm };
+  const notes = song.notes.slice(Math.max(0, from), Math.max(0, to));
+  return { notes: notes.length, seconds: unionLength(notes.map((n) => [n.start, n.start + n.beats])) * 60 / song.bpm };
 }
 
-/** "43 s" below a minute and a half, else "1:35". */
+/** Time coverage is independent of onset-based score attribution. */
+export function sectionTargetCoverage(song: Pick<Song, 'notes' | 'bpm'>, section: Pick<Section, 'startBeat' | 'endBeat'>): TargetCoverage {
+  const intervals = song.notes
+    .map((n): [number, number] => [Math.max(n.start, section.startBeat), Math.min(n.start + n.beats, section.endBeat)])
+    .filter(([start, end]) => end > start);
+  return { notes: intervals.length, seconds: unionLength(intervals) * 60 / song.bpm };
+}
+
+function unionLength(intervals: [number, number][]): number {
+  let total = 0;
+  let end = -Infinity;
+  for (const [a, b] of intervals.sort((x, y) => x[0] - y[0])) {
+    if (!Number.isFinite(a) || !Number.isFinite(b) || b <= a) continue;
+    total += Math.max(0, b - Math.max(a, end));
+    end = Math.max(end, b);
+  }
+  return total;
+}
+
+/** Metadata is rounded to tenths of a second; allow that much rounding, never an arbitrary ratio. */
+const VOCAL_METADATA_TOLERANCE_SECONDS = 0.1;
+function validVocalSeconds(value: unknown, duration: number, targetSeconds: number): number | null {
+  return typeof value === 'number' && Number.isFinite(value) && value > 0 &&
+    Number.isFinite(duration) && duration > 0 && Number.isFinite(targetSeconds) &&
+    value <= duration + VOCAL_METADATA_TOLERANCE_SECONDS && value + VOCAL_METADATA_TOLERANCE_SECONDS >= targetSeconds
+    ? value : null;
+}
+
+export function detectedVocalCoverage(song: Pick<Song, 'notes' | 'bpm'>, duration: number, presentSeconds?: number): { seconds: number; percent: number } | null {
+  const targets = targetCoverage(song).seconds;
+  const seconds = validVocalSeconds(presentSeconds, duration, targets);
+  return seconds === null ? null : { seconds, percent: Math.min(100, targets / seconds * 100) };
+}
+
+/** Coverage precision is separate from recording clock formatting. Positive time never reads zero. */
 export function fmtSpan(seconds: number): string {
-  return seconds < 90 ? `${Math.round(seconds)} s` : fmtTime(seconds);
+  if (seconds <= 0) return '0 s';
+  if (seconds < 0.1) return '<0.1 s';
+  return `${seconds.toFixed(1)} s`;
 }
 
 /** Onset times (s) useful for snapping lyric taps: note starts and phrase starts. */

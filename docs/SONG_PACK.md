@@ -44,19 +44,50 @@ notes both agree on. Pass `--plot melody.png` to see the result over the residua
 and `--residual-wav vocal.wav` to listen to the isolated vocal. The script also writes the
 offset between the two files (the reference track leads by 45.8 ms) and the tempo.
 
-Passages where the extraction is not confident (spoken delivery, dense backing) are left
-without target notes: the lyrics and the live pitch trace still show, but they are not scored.
-The results screen states how many targets and seconds the grade rests on, per section too.
+Passages that do not pass the extraction gates are left without target notes: the lyrics
+and live pitch trace still show, but no score is assigned there. Target absence alone does
+not identify spoken delivery, silence, an instrumental passage, or unusable lead-vocal pitch.
+The results screen states the target count and duration, including per-section coverage.
 
-To see why a passage has no targets, read `analysis` in `melody.json` after `make extract`
-(the same numbers are printed while it runs). `lostSeconds` splits the detected vocal that was
-not scored by the gate that rejected it: `pyinUnvoiced` (no pitch found, typical of spoken
-delivery), `trackersDisagree` (the two pitch trackers differ by 60 cents or more), `tooShort`
-(agreed pitch that did not hold for 100 ms) and `unstable` (a note-length segment that wandered).
-`disagreeSeconds` splits `trackersDisagree` by how the trackers differ: `octave` (one or two
-octaves apart, so only the octave is in doubt), `near` (0.6 to 1.5 semitones, typically a slide)
-and `other` (unrelated pitches). `gaps` gives the same breakdown for every stretch of 2 s or more without a target. Check these
-before changing any threshold; the figures for this song are in the design spec (section 4). The app ignores `analysis`.
+The extractor's `analysis` output records measured rejection categories, not verified vocal
+causes. `lostSeconds` partitions detected reference-vocal frames outside retained notes into
+`pyinUnvoiced` (pYIN did not accept a finite pitch in the residual), `trackersDisagree` (estimates
+differ by at least 60 cents), `tooShort` (agreement outside note-length segments), and
+`unstable` (a dropped segment). `disagreeSeconds` divides disagreement into `octave`
+(approximately one or two octaves apart, strictly within 60 cents), `near` (0.6 to less than
+1.5 semitones apart), and `other` (the remainder). Neither tracker is independently known to
+follow the lead vocal: octave disagreement does not establish pitch class, and a slide is
+only one possible explanation for near disagreement. Recovery from any category requires
+additional evidence. `gaps` gives the breakdown for target-free stretches of at least 2 s.
+The app can use `analysis.presentSeconds` for coverage; rejection categories do not affect
+scoring. See [extraction evidence status](diagnostics/2026-11-10-recorded-run.md) for the
+separate, unverified historical run and its missing evidence.
+
+For a diagnostic rerun, keep the deployed melody untouched. Write the complete output and
+logs to a separate local directory, for example:
+
+```sh
+mkdir -p work/extraction-review
+python3 tools/extract_melody.py public/songs/old-town-road/instrumental.mp3 \
+  public/songs/old-town-road/reference.mp3 --alpha 1.4 \
+  -o work/extraction-review/melody.json \
+  2> work/extraction-review/extractor.log
+```
+
+This is a proposed reproduction command, not the recovered command of the recorded run.
+Do not use `make extract` for a diagnostic-only run: its output path replaces the deployed
+pack. Retain the derived JSON beside the evidence report after review, without audio or
+private lyrics. Record its source signature, full extractor commit and any local diff, exact
+command/parameters, UTC run time, Python and dependency versions (`numpy`, `scipy`, `librosa`,
+`soundfile`, plus `soxr`/`numba` and libsndfile where used), output note count and SHA-256.
+Different output note counts must remain distinct from the deployed pack. A successful
+synthetic diagnostic test is not validation against reference audio.
+
+Run the audio-independent diagnostic tests with:
+
+```sh
+python3 -m unittest discover -s tests -p 'test_gate_report.py' -v
+```
 
 ## Lyric timing
 

@@ -1,7 +1,7 @@
 import melodyJson from '../public/songs/old-town-road/melody.json';
 import { describe, expect, it } from 'vitest';
 import { parseLyrics } from '../src/core/lyrics';
-import { BeatMap, buildSections, fmtSpan, melodyToSong, parseMelody, targetCoverage, vocalOnsets, type MelodyData } from '../src/core/melody';
+import { BeatMap, buildSections, detectedVocalCoverage, fmtSpan, melodyToSong, parseMelody, sectionTargetCoverage, targetCoverage, vocalOnsets, type MelodyData } from '../src/core/melody';
 
 const SAMPLE: MelodyData = {
   version: 1,
@@ -109,11 +109,52 @@ describe('target coverage', () => {
     const song = melodyToSong(m, 'x', 'X', [{ name: 'Whole song', start: 0, end: m.duration }], new BeatMap(m));
     const c = targetCoverage(song);
     expect(c.notes).toBe(m.notes.length);
-    expect(c.seconds).toBeCloseTo(m.notes.reduce((s, n) => s + n.d, 0), 6);
+    expect(c.notes).toBe(174);
+    expect(c.seconds).toBeCloseTo(43.312, 6);
     expect(c.seconds).toBeLessThan(m.duration / 2);
   });
   it('formats spans', () => {
-    expect(fmtSpan(43.3)).toBe('43 s');
-    expect(fmtSpan(157.683)).toBe('2:37');
+    expect(fmtSpan(43.315)).toBe('43.3 s');
+    expect([0, 0.001, 0.104, 0.337, 0.490].map(fmtSpan)).toEqual(['0 s', '<0.1 s', '0.1 s', '0.3 s', '0.5 s']);
+    expect(fmtSpan(157.683)).toBe('157.7 s');
+  });
+  it('clips crossing targets to each section without changing score attribution', () => {
+    const m = { ...SAMPLE, duration: 6, notes: [{ t: 2.9, d: 0.5, m: 60, c: 0 }] };
+    const song = melodyToSong(m, 'x', 'X', [{ name: 'A', start: 0, end: 3 }, { name: 'B', start: 3, end: 6 }], new BeatMap(m));
+    expect(song.sections.map((s) => s.noteTo - s.noteFrom)).toEqual([1, 0]);
+    const coverage = song.sections.map((s) => sectionTargetCoverage(song, s));
+    expect(coverage.map((c) => c.notes)).toEqual([1, 1]);
+    expect(coverage[0]!.seconds).toBeCloseTo(0.1, 9);
+    expect(coverage[1]!.seconds).toBeCloseTo(0.4, 9);
+  });
+  it('merges overlapping intervals and caps section coverage at the window length', () => {
+    const m = { ...SAMPLE, notes: [{ t: 1, d: 2, m: 60, c: 0 }, { t: 2, d: 3, m: 64, c: 0 }] };
+    const song = melodyToSong(m, 'x', 'X', [{ name: 'A', start: 2, end: 4 }], new BeatMap(m));
+    expect(targetCoverage(song)).toEqual({ notes: 2, seconds: 4 });
+    expect(sectionTargetCoverage(song, song.sections[0]!)).toEqual({ notes: 2, seconds: 2 });
+  });
+});
+
+describe('optional detected reference-vocal coverage', () => {
+  it('retains the deployed estimate and derives approximately 47% from loaded targets', () => {
+    const m = parseMelody(melodyJson);
+    const song = melodyToSong(m, 'x', 'X', [], new BeatMap(m));
+    expect(m.analysis).toEqual({ presentSeconds: 91.7 });
+    expect(detectedVocalCoverage(song, m.duration, m.analysis?.presentSeconds)?.percent).toBeCloseTo(47.23, 2);
+  });
+  it.each([undefined, null, 0, -1, NaN, Infinity, -Infinity, '10', 1, 21])('omits invalid denominator %s', (value) => {
+    const m = parseMelody({ ...SAMPLE, analysis: { presentSeconds: value } });
+    expect(m.analysis).toBeUndefined();
+    const song = melodyToSong(m, 'x', 'X', [], new BeatMap(m));
+    expect(detectedVocalCoverage(song, m.duration, value as number)).toBeNull();
+  });
+  it('allows rounded metadata and never double-counts overlapping target time', () => {
+    const m = parseMelody({ ...SAMPLE, notes: [{ t: 1, d: 2, m: 60 }, { t: 2, d: 2, m: 62 }], analysis: { presentSeconds: 3 } });
+    const song = melodyToSong(m, 'x', 'X', [], new BeatMap(m));
+    expect(detectedVocalCoverage(song, 20, m.analysis?.presentSeconds)).toEqual({ seconds: 3, percent: 100 });
+    expect(detectedVocalCoverage(song, 20, 2.95)?.percent).toBe(100);
+    expect(detectedVocalCoverage(song, 20, 2.89)).toBeNull();
+    expect(detectedVocalCoverage(song, 3, 3.05)).not.toBeNull();
+    expect(detectedVocalCoverage(song, 3, 3.11)).toBeNull();
   });
 });

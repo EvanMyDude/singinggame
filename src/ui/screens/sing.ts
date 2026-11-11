@@ -3,9 +3,11 @@ import { TrackPlayer } from '../../audio/trackPlayer';
 import { lineAt, wordAt, type LyricTiming } from '../../core/lyrics';
 import { BeatMap, buildSections, fmtTime, melodyToSong } from '../../core/melody';
 import { centsError, foldToOctaveOf, noteNameWithOctave } from '../../core/music';
+import { buildTimedLyricLines } from '../../core/phraseInsights';
 import { ScoreEngine, THRESHOLDS, gradeFor, multiplierFor, zoneFor, type Judgment, type NoteResult, type Zone } from '../../core/scoring';
 import type { Note, Song } from '../../core/song';
 import { SONG } from '../../core/songpack';
+import { TargetAvailability } from '../../core/targetAvailability';
 import { SPEEDS, type Speed } from '../../core/storage';
 import type { App, Route, Screen, SessionConfig } from '../app';
 import { fmtInt, h, icon, segmented, slider } from '../dom';
@@ -66,7 +68,7 @@ export function singScreen(app: App, route: Route): Screen {
   const markB = h('i', { class: 'loop-mark b', style: 'display:none' }, 'B');
   const progress = h('div', { class: `prog ${practice ? 'seekable' : ''}`, role: 'slider', 'aria-label': 'Playback position', tabindex: practice ? '0' : '-1' }, progFill, loopRegion, markA, markB);
   const toastHost = h('div');
-  const statusChip = h('span', { class: 'chip accent' }, practice ? 'Practice' : 'Sing');
+  const statusChip = h('span', { class: 'chip accent', role: 'status' }, practice ? 'Practice · unscored' : 'Sing');
 
   const playBtn = h('button', { class: 'btn primary icon-lg', onclick: () => void togglePlay(), 'aria-label': 'Play / pause (Space)', title: 'Play / pause (Space)' }, icon('play2'));
   const restartBtn = h('button', { class: 'btn icon', onclick: () => void restart(), 'aria-label': 'Restart (R)', title: 'Restart (R)' }, icon('restart'));
@@ -172,6 +174,7 @@ export function singScreen(app: App, route: Route): Screen {
   let lastVoicedAt = 0;
   let shownLine = -2;
   let wordSpans: HTMLElement[] = [];
+  const targetAvailability = new TargetAvailability(melody.notes);
 
   const toast = (text: string) => {
     const t = h('div', { class: 'toast' }, text);
@@ -184,6 +187,7 @@ export function singScreen(app: App, route: Route): Screen {
     referenceOffset: melody.referenceOffset,
     onEnded: () => void onEnded(),
     onLoop: () => {
+      targetAvailability.reset();
       trail = [];
     },
     onError: (m) => toast(m),
@@ -201,7 +205,7 @@ export function singScreen(app: App, route: Route): Screen {
     .load()
     .then(async () => {
       if (ended) return;
-      p.seek(loopOn && loopA !== null ? loopA : startAt);
+      seek(loopOn && loopA !== null ? loopA : startAt);
       await p.play();
       updatePlayUi();
     })
@@ -323,10 +327,25 @@ export function singScreen(app: App, route: Route): Screen {
   });
 
   // ---------- controls ----------
+  const updateTargetStatus = (time: number) => {
+    const freeSinging = targetAvailability.update(time, !p.paused);
+    const label = practice
+      ? p.paused ? 'Practice · unscored · paused' : 'Practice · unscored'
+      : p.paused ? 'Paused' : freeSinging ? 'Free singing · no pitch target' : 'Sing';
+    if (statusChip.textContent !== label) statusChip.textContent = label;
+  };
+
+  const seek = (time: number) => {
+    targetAvailability.reset();
+    p.seek(time);
+    updateTargetStatus(p.rawTime());
+  };
+
   const updatePlayUi = () => {
+    targetAvailability.reset();
     playBtn.replaceChildren(icon(p.paused ? 'play2' : 'pause'));
     playBtn.setAttribute('aria-label', p.paused ? 'Play (Space)' : 'Pause (Space)');
-    statusChip.textContent = p.paused ? (practice ? 'Practice · paused' : 'Paused') : practice ? 'Practice' : 'Sing';
+    updateTargetStatus(p.rawTime());
   };
 
   const togglePlay = async () => {
@@ -340,7 +359,7 @@ export function singScreen(app: App, route: Route): Screen {
 
   const restart = async () => {
     if (ended) return;
-    p.seek(loopOn && loopA !== null ? loopA : 0);
+    seek(loopOn && loopA !== null ? loopA : 0);
     trail = [];
     scorer = null;
     for (let i = 0; i < song.notes.length; i++) {
@@ -407,14 +426,14 @@ export function singScreen(app: App, route: Route): Screen {
     p.setLoop(loopA, loopB, loopOn);
     updateLoopUi();
     toast(`Looping ${fmtTime(loopA)} – ${fmtTime(loopB)}`);
-    if (p.rawTime() < loopA || p.rawTime() > loopB) p.seek(loopA);
+    if (p.rawTime() < loopA || p.rawTime() > loopB) seek(loopA);
   };
   const setLoopOn = (on: boolean) => {
     if (loopA === null || loopB === null) return;
     loopOn = on;
     p.setLoop(loopA, loopB, loopOn);
     updateLoopUi();
-    if (on && (p.rawTime() < loopA || p.rawTime() > loopB)) p.seek(loopA);
+    if (on && (p.rawTime() < loopA || p.rawTime() > loopB)) seek(loopA);
   };
   const clearLoop = () => {
     loopA = loopB = null;
@@ -426,7 +445,7 @@ export function singScreen(app: App, route: Route): Screen {
   const seekFromPointer = (e: PointerEvent) => {
     const r = progress.getBoundingClientRect();
     const k = Math.max(0, Math.min(1, (e.clientX - r.left) / r.width));
-    p.seek(k * melody.duration);
+    seek(k * melody.duration);
     trail = [];
   };
   if (practice) {
@@ -482,10 +501,10 @@ export function singScreen(app: App, route: Route): Screen {
         if (practice) setSpeed(SPEEDS[Number(e.key) - 1]!);
         break;
       case 'ArrowLeft':
-        if (practice) p.seek(p.rawTime() - 5);
+        if (practice) seek(p.rawTime() - 5);
         break;
       case 'ArrowRight':
-        if (practice) p.seek(p.rawTime() + 5);
+        if (practice) seek(p.rawTime() + 5);
         break;
     }
   };
@@ -544,6 +563,8 @@ export function singScreen(app: App, route: Route): Screen {
       song,
       sections,
       duration: melody.duration,
+      detectedVocalSeconds: melody.analysis?.presentSeconds,
+      lyricLines: buildTimedLyricLines(pack.lyrics, pack.timing, map),
       score: record.score,
       accuracy,
       timing: record.timing,
@@ -618,6 +639,7 @@ export function singScreen(app: App, route: Route): Screen {
     lastFrameT = nowMs;
     const t = p.time;
     const beat = map.beat(t);
+    updateTargetStatus(t);
     if (!practice && !scorer && !p.paused && p.clockReady) newScorer();
 
     const headOut = head && nowMs - head.t < 140 ? { m: head.m, zone: head.zone } : null;

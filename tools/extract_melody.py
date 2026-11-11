@@ -16,15 +16,18 @@ How it works
      estimated robustly (median ratio over frames), then |V|^2 = |F|^2 - a*g^2*|I|^2 leaves a
      vocal-dominated residual, resynthesized with the full mix's phase. Time-domain
      subtraction does not work here because the two masters differ in compression/EQ.
-  4. pYIN (probabilistic YIN with Viterbi smoothing) tracks the residual's fundamental.
-     Frames are kept only when pYIN is confident AND the residual carries real energy
-     relative to the mix, so backing leakage in vocal-free passages is not tracked.
-  5. The frame track is segmented into notes (stable pitch for at least 100 ms); unstable
-     or glissando-like stretches are not scored, since a target that is not a note would
-     only produce noise in the score.
-  6. Diagnostics: `analysis` in the output records how many seconds of detected vocal each
-     gate rejected, overall and for every stretch of 2 s or more without a target (see
-     gate_report). Read these before changing a threshold; the app ignores them.
+  4. pYIN and harmonic-summation salience track pitch estimates in the residual. Frames
+     pass only where the trackers agree and the presence gates accept the residual's
+     energy and harmonicity. These gates aim to reduce backing leakage; they do not
+     establish which estimates follow the lead vocal.
+  5. The accepted frame track is segmented into notes (at least 100 ms, median absolute
+     deviation at most 35 cents). Segments rejected for length or measured instability
+     remain unscored; the rejection does not identify the underlying vocal behavior.
+  6. Diagnostics: `analysis` records the measured rejection categories on the detected
+     reference-vocal presence mask, overall and for target-free stretches of 2 s or more
+     (see gate_report). These are tracker outputs, not verified causes in the lead vocal.
+     Review them alongside audio evidence before changing a threshold. The app can use
+     presentSeconds for coverage; the remaining diagnostics do not affect scoring.
 
 Dependencies: numpy, scipy, librosa (>= 0.10), soundfile (libsndfile with MP3 support).
 """
@@ -314,24 +317,28 @@ def gate_report(
     min_gap: float = 2.0,
 ) -> dict:
     """
-    Why detected vocal did not become target notes. Every frame where the vocal is present but
-    that lies outside a kept note is assigned the first gate that rejected it:
+    Partition detected reference-vocal frames outside retained notes by rejection category:
 
-      pyinUnvoiced      pYIN found no pitch (typical of spoken or breathy delivery)
-      trackersDisagree  pYIN and the salience tracker differ by 60 cents or more
-      tooShort          the trackers agree, but the pitch did not hold for a whole 100 ms note
-      unstable          a note-length segment whose pitch wandered too much (MAD > 35 cents)
+      pyinUnvoiced      pYIN did not accept a finite pitch in the residual
+      trackersDisagree  pYIN and the salience tracker differ by at least 60 cents
+      tooShort          agreement frames outside any retained or dropped note-length segment
+      unstable          frames inside a dropped segment (MAD > 35 cents or length < 100 ms)
 
-    `diff` is pYIN minus salience in semitones (NaN where pYIN is unvoiced). It splits the
-    trackersDisagree frames by how the two trackers differ:
+    Retained spans take precedence, then dropped segment spans, then the earlier tracker
+    gates. This preserves the first rejecting gate on ordinary extractor output while
+    accounting for tiny gaps bridged by segment merging. Frames outside `present` are not
+    part of this partition. Durations are frame counts rounded to hundredths of a second.
 
-      octave  one or two octaves apart (within 60 cents): one tracker locked onto a harmonic
-              or subharmonic of the same note, so the pitch class is known but the octave is not
-      near    0.6 to 1.5 semitones apart: both follow the same pitch, typically during a slide
-      other   anything else: at least one tracker is following something that is not the vocal
+    `diff` is pYIN minus salience in semitones (NaN where pYIN is unvoiced). On disagreement
+    frames, `octave` means approximately one or two octaves apart (strictly within 60 cents),
+    `near` means 0.6 to less than 1.5 semitones apart, and `other` contains the remainder.
+    Either tracker can be wrong or follow backing audio. These categories do not establish
+    lead-vocal pitch class, an unrecoverable pitch, or a slide; a slide is one possible
+    explanation for `near`. Recovery from any category needs evidence beyond these labels.
 
-    Returns the totals in seconds and the same breakdown for every stretch of at least
-    `min_gap` seconds without a target, so a gap can be judged before any threshold is touched.
+    Returns totals and the same breakdown for target-free stretches of at least `min_gap`
+    seconds, including leading and trailing gaps. Rounded category totals can differ from
+    a rounded aggregate by a few hundredths. No thresholds or note selection are changed.
     """
     n = len(present)
 
@@ -459,7 +466,7 @@ def main() -> int:
     midi_s = 69 + 12 * np.log2(f0s / 440)
     midi_p = np.where(np.isfinite(f0p), 69 + 12 * np.log2(np.where(np.isfinite(f0p), f0p, 440) / 440), np.nan)
     # Two independent trackers must agree (within 60 cents, no octave forgiveness) for a frame
-    # to become part of a scored note; disagreement means the target is not trustworthy there.
+    # to become part of a scored note; disagreement alone does not identify the vocal cause.
     pyin_voiced = vflag & np.isfinite(midi_p)
     agree = pyin_voiced & (np.abs(midi_p - midi_s) < 0.6)
     voiced = present & agree

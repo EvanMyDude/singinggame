@@ -1,6 +1,7 @@
 import { keyPrefersFlats, noteNameWithOctave } from '../../core/music';
-import { fmtSpan, fmtTime, targetCoverage, type SectionSpec } from '../../core/melody';
-import { THRESHOLDS, phraseInsights, pitchInsights, weakestSection, type Counts, type Judgment, type NoteResult, type PhraseInsight, type PitchInsight } from '../../core/scoring';
+import { detectedVocalCoverage, fmtSpan, fmtTime, sectionTargetCoverage, targetCoverage, type SectionSpec } from '../../core/melody';
+import { timedPhraseInsights, type TimedLyricLine, type TimedLineInsight } from '../../core/phraseInsights';
+import { THRESHOLDS, pitchInsights, weakestSection, type Counts, type Judgment, type NoteResult, type PitchInsight } from '../../core/scoring';
 import type { Song } from '../../core/song';
 import { SONG } from '../../core/songpack';
 import type { AttemptRecord } from '../../core/storage';
@@ -14,6 +15,9 @@ export interface AttemptResult {
   sections: SectionSpec[];
   /** Length of the track (s). */
   duration: number;
+  detectedVocalSeconds?: number;
+  /** Actual lyric windows for this attempt; never persisted with high scores. */
+  lyricLines: TimedLyricLine[] | null;
   score: number;
   accuracy: number;
   timing: number;
@@ -64,7 +68,7 @@ export function resultsScreen(app: App, route: Route): Screen {
   const practiceWeak = () => weak && void app.startSession({ mode: 'practice', startAt: weak.start, loop: { a: weak.start, b: weak.end } });
 
   const ins = pitchInsights(r.notes);
-  const phrases = phraseInsights(song, r.notes);
+  const phrases = timedPhraseInsights(song, r.notes, r.lyricLines);
   const onsets = r.notes.map((n) => n.onset).filter((o): o is number => o !== null).sort((a, b) => a - b);
   const medianOnset = onsets.length >= 5 ? onsets[onsets.length >> 1]! : 0;
   const latencyHint =
@@ -79,6 +83,7 @@ export function resultsScreen(app: App, route: Route): Screen {
   const total = r.notes.length;
   // What the grade rests on: targets exist only where the melody could be extracted reliably.
   const cover = targetCoverage(song);
+  const vocals = detectedVocalCoverage(song, r.duration, r.detectedVocalSeconds);
   const targetWord = cover.notes === 1 ? 'pitch target' : 'pitch targets';
   const hit = r.counts.perfect + r.counts.great + r.counts.good;
 
@@ -96,14 +101,16 @@ export function resultsScreen(app: App, route: Route): Screen {
       'div',
       { class: 'stat-grid', style: 'margin-top:24px' },
       stat('Pitch accuracy (on targets)', `${Math.round(r.accuracy)}%`),
-      stat('Timing accuracy', `${Math.round(r.timing)}%`),
+      stat('Timing accuracy (sung targets)', `${Math.round(r.timing)}%`),
       stat('Best streak', String(r.bestStreak)),
       stat('Targets hit', `${hit}/${total}`),
     ),
     h(
       'div',
       { class: 'notice', style: 'margin-top:12px' },
-      `Only the ${cover.notes} ${targetWord} are graded. They cover ${fmtSpan(cover.seconds)} of this ${fmtTime(r.duration)} track. Passages where the melody could not be extracted reliably from the reference recording have no targets, and singing there cannot lower your grade.`,
+      h('div', null, `Only the ${cover.notes} ${targetWord} are graded. They cover ${fmtSpan(cover.seconds)} of this ${fmtTime(r.duration)} track. Your score reflects the available targets; singing outside them cannot lower your grade.`),
+      vocals ? h('div', { style: 'margin-top:6px' }, `About ${Math.round(vocals.percent)}% of detected reference-vocal time has targets. Detected reference vocals: ${fmtSpan(vocals.seconds)}. Recording: ${fmtTime(r.duration)}.`) : null,
+      h('div', { class: 'small', style: 'margin-top:6px' }, 'Timing accuracy summarizes sung targets; targets without a sung timing are excluded.'),
     ),
     latencyHint,
     h(
@@ -117,7 +124,7 @@ export function resultsScreen(app: App, route: Route): Screen {
       'div',
       { class: 'row', style: 'margin-top:22px' },
       h('button', { class: 'btn primary big', onclick: tryAgain }, 'Sing Again'),
-      weak ? h('button', { class: 'btn big', onclick: practiceWeak }, `Practice Weakest Part: ${weak.name}`) : null,
+      weak ? h('button', { class: 'btn big', onclick: practiceWeak }, `Practice weakest scored part: ${weak.name}`) : null,
       h('button', { class: 'btn big', onclick: () => void app.startSession({ mode: 'practice' }) }, 'Practice'),
     ),
     h(
@@ -138,6 +145,17 @@ export function resultsScreen(app: App, route: Route): Screen {
         ...(ins.struggled.length ? ins.struggled.map((p) => insightRow(p, nn, false, song)) : [h('div', { class: 'muted small' }, 'Nothing stood out. Every pitch was close.')]),
       ),
     ),
+    phrases.lines.length
+      ? h('details', { class: 'card', style: 'margin-top:14px' },
+          h('summary', null, 'Scored lyric lines'),
+          h('p', { class: 'muted small' }, 'Accuracy describes assigned pitch targets, not the entire lyric line. Rankings require at least two targets and 0.5 s of target time in each of two lines.'),
+          !phrases.best && !phrases.hardest ? h('p', { class: 'muted small' }, 'No best or hardest scored line to report from the available target support and accuracy.') : null,
+          ...phrases.lines.map((line) => h('div', { style: 'margin-top:10px' },
+            h('div', null, line.text),
+            h('div', { class: 'faint tiny' }, `${line.targetCount} ${line.targetCount === 1 ? 'target' : 'targets'} · ${fmtSpan(line.targetSeconds)} · ${line.accuracy === null ? 'unscored' : `${Math.round(line.accuracy * 100)}% on assigned targets`}${line.targetCount && !line.rankable ? ' · insufficient support for ranking' : ''}`),
+          )),
+        )
+      : h('div', { class: 'muted small', style: 'margin-top:14px' }, 'Lyric line insights unavailable without matching lyrics and saved line timing.'),
     h('div', { class: 'card', style: 'margin-top:14px' }, deviationTimeline(song, r.notes, nn)),
     h(
       'div',
@@ -185,19 +203,21 @@ function timelineRows(song: Song, r: AttemptResult, nn: (m: number) => string): 
   song.sections.forEach((sec, si) => {
     const spec = r.sections[si];
     const span = spec ? fmtSpan(spec.end - spec.start) : '';
-    if (sec.noteTo <= sec.noteFrom) {
+    const cov = sectionTargetCoverage(song, sec);
+    if (!cov.notes || sec.noteTo <= sec.noteFrom) {
       // A section without targets is shown, not hidden: it was sung but could not be graded.
       rows.push(
         h(
           'div',
           { class: 'timeline-row' },
-          h('div', null, h('div', { style: 'font-weight:600' }, sec.name), h('div', { class: 'faint tiny' }, 'not scored')),
-          h('div', { class: 'faint small' }, `No pitch targets${span ? ` in this ${span} section` : ''}. Free singing; it does not affect your grade.`),
+          h('div', null, h('div', { style: 'font-weight:600' }, sec.name), h('div', { class: 'faint tiny' }, 'Accuracy unavailable'), h('div', { class: 'faint tiny' }, `${fmtSpan(cov.seconds)}${span ? ` of ${span}` : ''}`)),
+          h('div', { class: 'faint small' }, cov.notes
+            ? 'Continuing target from previous part; no separate note score. 0 targets starting here.'
+            : `No pitch targets${span ? ` in this ${span} section` : ''}. Free singing; it does not affect your grade.`),
         ),
       );
       return;
     }
-    const cov = targetCoverage(song, sec.noteFrom, sec.noteTo);
     const dots: HTMLElement[] = [];
     for (let i = sec.noteFrom; i < sec.noteTo; i++) {
       const n = byIndex.get(i);
@@ -210,9 +230,8 @@ function timelineRows(song: Song, r: AttemptResult, nn: (m: number) => string): 
           : `${Math.round(Math.abs(bias))} cents ${bias > 0 ? 'sharp' : 'flat'} · ${Math.round(n.accuracy * 100)}%${n.onset !== null ? ` · entered ${Math.round(n.onset * 1000)} ms ${n.onset >= 0 ? 'after' : 'before'} the note` : ''}`;
       dots.push(h('span', { class: `tdot ${n.judgment}`, title: `${nn(n.midi)} · ${LABEL[n.judgment]} · ${detail}` }, h('span', { class: 'dir' }, dir)));
     }
-    if (!dots.length) return;
     const acc = r.notes.filter((n) => n.index >= sec.noteFrom && n.index < sec.noteTo);
-    const pct = acc.length ? Math.round((100 * acc.reduce((s, n) => s + n.accuracy * n.beats, 0)) / acc.reduce((s, n) => s + n.beats, 0)) : 0;
+    const pct = acc.length ? `${Math.round((100 * acc.reduce((s, n) => s + n.accuracy * n.beats, 0)) / acc.reduce((s, n) => s + n.beats, 0))}%` : 'Accuracy unavailable';
     rows.push(
       h(
         'div',
@@ -221,8 +240,8 @@ function timelineRows(song: Song, r: AttemptResult, nn: (m: number) => string): 
           'div',
           null,
           h('div', { style: 'font-weight:600' }, sec.name),
-          h('div', { class: 'faint tiny' }, `${pct}%`),
-          h('div', { class: 'faint tiny' }, `${cov.notes} ${cov.notes === 1 ? 'target' : 'targets'}`),
+          h('div', { class: 'faint tiny' }, pct),
+          h('div', { class: 'faint tiny' }, `${sec.noteTo - sec.noteFrom} ${sec.noteTo - sec.noteFrom === 1 ? 'target' : 'targets'} starting here`),
           h('div', { class: 'faint tiny' }, `${fmtSpan(cov.seconds)}${span ? ` of ${span}` : ''}`),
         ),
         h('div', { class: 'timeline-dots' }, ...dots),
@@ -251,7 +270,7 @@ function insightRow(p: PitchInsight, nn: (m: number) => string, good: boolean, s
   );
 }
 
-function phraseRow(p: PhraseInsight, good: boolean): HTMLElement {
+function phraseRow(p: TimedLineInsight, good: boolean): HTMLElement {
   const bias = p.bias;
   const dir = !Number.isFinite(bias)
     ? 'mostly not sung'
@@ -261,8 +280,8 @@ function phraseRow(p: PhraseInsight, good: boolean): HTMLElement {
   return h(
     'div',
     { class: 'insight' },
-    h('span', { class: 'note', style: `color:${good ? 'var(--perfect)' : 'var(--off)'};font-size:13px;min-width:86px` }, good ? 'Best phrase' : 'Hardest phrase'),
-    h('div', { class: 'grow' }, h('div', null, p.text), h('div', { class: 'faint tiny' }, `${Math.round(p.accuracy * 100)}% · ${dir}`)),
+    h('span', { class: 'note', style: `color:${good ? 'var(--perfect)' : 'var(--off)'};font-size:13px;min-width:86px` }, good ? 'Best scored line' : 'Hardest scored line'),
+    h('div', { class: 'grow' }, h('div', null, p.text), h('div', { class: 'faint tiny' }, `${Math.round(p.accuracy! * 100)}% on targets · ${dir}`), h('div', { class: 'faint tiny' }, `${p.targetCount} targets · ${fmtSpan(p.targetSeconds)}`)),
   );
 }
 

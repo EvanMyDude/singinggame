@@ -1340,6 +1340,10 @@ input[type='range']::-moz-range-thumb {
   .hud-stats {
     gap: 14px;
   }
+  .hud-top {
+    flex-wrap: wrap;
+    gap: 12px;
+  }
   .hud-stat b {
     font-size: 18px;
   }

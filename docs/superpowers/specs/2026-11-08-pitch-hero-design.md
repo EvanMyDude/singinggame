@@ -65,33 +65,30 @@ file carries verified word times (`words` per line); none is faked.
    removes the rest; harmonic/percussive separation drops leftover transients.
 3. Two independent trackers (harmonic-summation salience with Viterbi, and pYIN) run on the
    residual; a frame becomes part of a target note only where both agree within 60 cents and the
-   residual is clearly vocal (energy relative to the mix, harmonicity).
+   residual passes energy and harmonicity gates intended to estimate vocal presence.
 4. Stable segments (≥ 100 ms, median absolute deviation ≤ 35 cents) become notes.
 
-Result for this song: 174 notes, 43 s of scorable melody out of 92 s of detected vocal; range
-A♯2–D♯4; 168/174 notes in the detected key (F♯ major); mean tuning deviation 0 cents. Passages
-that fail a gate are left unscored rather than scored against a guess.
+The [deployed melody](../../../public/songs/old-town-road/melody.json) contains 174 targets,
+43.3 s of target duration and a 91.7 s detected reference-vocal presence estimate. These are
+pack metadata, not a fresh validation of the lead vocal. Targets that fail a gate remain
+unscored. The melody also carries the tempo, reference offset and the detected phrase list
+used by the lyric sync tool.
 
-Measured on 2026-11-10 with the extractor's gate diagnostics (same source files, hash
-`594c7e902d9a`; that run produced 175 notes because of library version differences), the roughly 48.5 s
-of detected vocal without targets split as follows:
+The earlier assessment recorded a later 175-note diagnostic run, but its derived JSON, exact
+command, dependency versions and output hash were not retained in the repository. Its
+figures and missing run identity are preserved in the
+[recorded-run evidence status](../../diagnostics/2026-11-10-recorded-run.md). They remain
+unverified pending reproduction and must not be substituted for the deployed 174-note pack.
+The earlier attribution of the note-count difference to library versions was a hypothesis;
+without those versions and outputs its cause is unknown.
 
-| Rejected because | Seconds |
-| --- | --- |
-| pYIN found no pitch (spoken or breathy delivery) | 18.1 |
-| Trackers on unrelated pitches | 13.7 |
-| Trackers one or two octaves apart | 8.9 |
-| Agreed pitch shorter than a 100 ms note | 6.2 |
-| Trackers 0.6 to 1.5 semitones apart (slides) | 1.4 |
-| Note-length segment too unstable | 0.3 |
-
-Two thirds (31.8 s) has no pitch or no agreement on one, so it cannot become targets without
-guessing. The length and stability thresholds are not the limit: in the eight longest gaps they
-reject at most 0.1 s each. Octave ambiguity is the only pool that could be recovered, and it is
-at most 8.9 s overall and 0.1 to 1.1 s inside each verse gap, so it would not close those gaps.
-The results screen therefore states what the grade rests on instead of the extractor being
-loosened. `melody.json` also carries tempo (136 BPM, for bar lines), the reference offset and the
-vocal phrase list used by the lyric sync tool.
+Rejection labels measure tracker behavior in the residual. `pyinUnvoiced` does not prove that
+the lead voice lacks usable pitch. Approximate octave disagreement does not establish which
+estimate, if either, follows the lead vocal or has the right pitch class. Near disagreement
+can have several causes; a slide is only a hypothesis. No category proves that recovery is
+possible or impossible. Octave disagreement is one bounded candidate pool for further
+review, and any recovery needs independent audio evidence. Keep the extraction thresholds
+and deployed targets unchanged while addressing reporting and feedback.
 
 ## 5. Two tracks in sync
 
