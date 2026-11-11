@@ -2,9 +2,9 @@
   "reviewedCommit": "38c339f7ec48e29acc61f1d2ed8cb7d3e9247d01",
   "cases": {
     "accurate": {
-      "frames": "feb3e3419b47e7b6f4c00527f8781489b524704e2fd635e40c94bdec4c0ae3ed",
-      "judges": "a2892b2759ac34fd6f5c321e515f3bbfcefb5ed1334c6294b09d7aa6d9c902a6",
-      "notes": "3753e0516a2025c7a0ca0f92ca8a64e93eacd37efdbe199c3fb2de43a153c646",
+      "frames": "eb675d555e75a69140d23b982e98c605614c3ec52a078b1d4098630d7a90c6a3",
+      "judges": "c0f6ba0da9c3fefc7787faacf3df3ec54c33b694f0396b2181761f9489aadd53",
+      "notes": "2c47079c28d3affa339a66559b88895f7d46df050973f42f3dc562786b7cc81d",
       "score": 34880.73599999904,
       "grade": "S",
       "accuracy": 100,
@@ -20,9 +20,9 @@
       "bestStreak": 174
     },
     "flat": {
-      "frames": "4278e36ec8ac1354f6573e41f33ac84bbaa9adda28134e14556f58cc49bd52d9",
-      "judges": "70242d48ba30000ee59bc709f53e40f28a98c1b01610ca489470c5f0c2d35beb",
-      "notes": "00c357aa95954157edb3f98392690ca00a61b8ee944d94684cb0f737fd84549c",
+      "frames": "1d243d0c0d9a9216e2732cb9e41d8345ad384e88263a87dbc97b65ce7be39c48",
+      "judges": "139e5c7230996ad6a203ace24abd25a72ba863a0beaed0036e35abab27028832",
+      "notes": "ee8bc7ba0fa287c7ed7ff12f173dfb1d7ea94effc23c4121ea7866237e0b3a36",
       "score": 25104.706985805416,
       "grade": "C",
       "accuracy": 69.43962775836772,
@@ -38,9 +38,9 @@
       "bestStreak": 174
     },
     "mixed": {
-      "frames": "f4a56cf99ae5ec1f094d5e1bb72535ce7b270c8253d14767d65ebe190a34629d",
-      "judges": "6e0b725f05ab7b9c1cb45fd9b3b140ddce6e4e1eb93f43e1c7e558796c80d2d7",
-      "notes": "b2935d993fa0890885672b4a03de8e04662f7508b1584852ed6129a5b6b4d3ec",
+      "frames": "6087bf5fc32b2ea26f9ff9e5b77ffe62664a31a1f9711d83833299270f39da22",
+      "judges": "93036d4cea4269afd0706923dcf777cb466eb1f9b148e0ce37d6dc1d20fd7b1e",
+      "notes": "839edeb75a6b9704564d28aa16cd0ec0f4ca89079cd46b0ccec2e6dc1b949c06",
       "score": 8329.846451598258,
       "grade": "C",
       "accuracy": 60.14508088592523,
@@ -56,9 +56,9 @@
       "bestStreak": 11
     },
     "latency": {
-      "frames": "024d23f96c89a693d9d7110d4cfcfa5c94c447efc3a2dc4b8db14d56d584ef9a",
-      "judges": "6aeea0233574b29732a38a017c3899020c1b28c6e0e4fbcf75ae2a7a6a13b6a2",
-      "notes": "a9db39b9979cd9d58a20a5646895bada95c59d65ab59d8c577b9cdb7d55910c8",
+      "frames": "8ba152bb9c692e5ba5972fdabf6781c4b3b62d0cc9a8c9992e8ccabe2242412c",
+      "judges": "4fd12d026597f4dfe9c96e93b1f5e74103ca814312498442f212a67cc20f8871",
+      "notes": "efe5d10e4a888553d58418d4532e65466135cbd6080e15ad1f6f04a14ba14c66",
       "score": 34892.82488888794,
       "grade": "S",
       "accuracy": 100,
@@ -74,9 +74,9 @@
       "bestStreak": 174
     },
     "octave": {
-      "frames": "44fd09751ccb7d9b06383bf0b6d30fc7d478a47b0a227087cc115f54687602b2",
-      "judges": "9686a82c46c57ab040265d60ea5b625f14cb10dcb3bf393383fea606d89b9759",
-      "notes": "495476043c311a1edab8daa419af252ac99e879a408d5eec02eab0799e51052e",
+      "frames": "70e26f0111705ef98fca67ad7347791f9c3c6a48591b580005a58f2473a3620e",
+      "judges": "1f6e186d48c4d77823a2b383bb8e58d8bac4465f043f6858ac69b8bffd94d29d",
+      "notes": "602769561f1f6e4f02462aadcf4bb286169d92d11fbbdb21fad74f7bfce2e7f1",
       "score": 34880.73599999905,
       "grade": "S",
       "accuracy": 100,
@@ -92,9 +92,9 @@
       "bestStreak": 174
     },
     "silence": {
-      "frames": "2ee8bdd14638521bb0754c3be61db16e0231882b26d858cb5820bcc32df6a436",
-      "judges": "a1a0b181f690c2f874ec88863200dd90829c7f9fe84b9c5f7c1566abb9c90e5a",
-      "notes": "e93e80657934027c3885b6b73548c998ed4ca623d7e9983d19badd35b2a555af",
+      "frames": "ba87190b12c914a525233e934a3dee766eb592a07e00f07d6fe8950df7ca31d9",
+      "judges": "85cc62b65d660e4080403d3f4ff3da067cd886a6b9b608aef0e7849c5c5a22f2",
+      "notes": "02a1863694fb4f65ba352dbd80d292794dc4215b726e6fdb8bb9e0bcffa5e10e",
       "score": 0,
       "grade": "F",
       "accuracy": 0,
@@ -109,5 +109,10 @@
       "streak": 0,
       "bestStreak": 0
     }
+  },
+  "vectorDecimalPlaces": 9,
+  "sourceSha256": {
+    "scoring.ts": "d8c0fefea3bdbac70c3dada4284662b12ab03e64c41e91a4bb0dc2b6edfe964f",
+    "music.ts": "634a82ebca89df5ce79400363f4415b713e3affc1c580af5089cd49382cf5e44"
   }
 }
