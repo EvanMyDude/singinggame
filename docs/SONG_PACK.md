@@ -32,7 +32,8 @@ lyric sync are the same for every song and read only that song's data.
    `public/songs/index.json`, and reports whether `timing.json` is usable. It never renames
    your files and never rewrites `timing.json`.
 5. **Read its report.** It prints the measured offsets, the note count and range, how many
-   seconds of vocal became targets, and how many were left out and why. Add
+   seconds of vocal became targets, how many were left out and why, and how many notes were
+   sung between two semitones. Add
    `--plot check.png` to see the pitch contour with the target notes drawn over it.
 6. **Sync the lyrics** if there is no usable `timing.json` yet: `make dev`, choose the song,
    Settings → **Sync lyrics**, save, and put the downloaded `timing.json` in the folder.
@@ -128,7 +129,9 @@ public repository are as public as ordinary ones.
 2. **Alignment.** The instrumental's timeline is the song timeline. With a full mix, the
    position of the instrumental and of the vocal inside the mix are both measured by
    cross-correlation and checked in 8-second windows, which places the vocal on the song
-   timeline and gives the reference offset. Without a mix, the two stems are assumed to start
+   timeline and gives the reference offset. The files may start at different points (an
+   instrumental with a longer lead-in, for example); up to 10 s either way is found. A warning
+   about different speeds or disagreeing windows means the files are not the same recording. Without a mix, the two stems are assumed to start
    together, which holds for stems from one separation; `melody.json` records the assumption
    (`analysis.alignment.vocal.method`) and `--vocal-offset` overrides it.
 3. **Pitch.** pYIN tracks the isolated vocal. A frame counts as sung when pYIN calls it voiced
@@ -143,9 +146,12 @@ public repository are as public as ordinary ones.
    - a long scoop or fall is trimmed off the note; a glide that never settles produces no
      target;
    - notes shorter than 100 ms are dropped, and same-pitch notes less than 60 ms apart are
-     joined.
+     joined;
+   - a note shorter than 0.3 s that sits nine semitones or more from the melody around it (a
+     tracker locking onto a harmonic for a moment) is dropped. Without this, a handful of
+     stray blips stretch the highway's pitch range to several times what the song needs.
 5. **Report.** `analysis` in `melody.json` records present, pitched and scored seconds and the
-   seconds left out by reason (`unpitched`, `transition`, `tooShort`, `unstable`). These are
+   seconds left out by reason (`unpitched`, `transition`, `tooShort`, `unstable`, `outlier`). These are
    tracker measurements, not verified statements about the performance. Passages without
    targets still show the lyrics and your live pitch; they are not scored.
 6. Key and tempo come from the instrumental (bar lines); phrases come from where the vocal is
@@ -213,7 +219,15 @@ everything at once; then play through and nudge. **Save timing** stores the resu
 browser and downloads `timing.json`; put that file in the song folder and commit it.
 
 **Checking an existing file**: `npm run prepare-song -- public/songs/<id> --check-only` names
-every rule the file breaks (shape, lyric hash, line count, order, times beyond the song).
+every rule the file breaks (shape, lyric hash, line count, order, times beyond the song). It
+also warns when the timed lines do not cover the singing, which is what a guessed or partial
+timing looks like. Passing these checks does not mean the times are right: no check here
+listens to the words. Watch the lyrics against the song in the app.
+
+**Starting over**: the Sync tool opens with the existing timing when it matches the lyrics.
+To mark every line afresh, move the old `timing.json` out of the song folder first. Finish
+`lyrics.txt` before syncing (every sung line, in order, repeated lines repeated), because
+editing it afterwards invalidates the timing.
 
 **Automating it later.** The intended path is a forced aligner run on the isolated vocal with
 the known lyric text, written by a `tools/align_lyrics.py` that outputs this same file format

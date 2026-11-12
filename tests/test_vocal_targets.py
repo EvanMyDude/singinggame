@@ -121,6 +121,24 @@ class NotesFromContour(unittest.TestCase):
         notes, _ = run([(0.14, 60.0), (0.14, 62.0), (0.14, 64.0), (0.14, 65.0)])
         self.assertEqual([n.midi for n in notes], [60, 62, 64, 65])
 
+    def test_short_stray_note_far_from_the_melody_is_dropped(self):
+        # An isolated syllable tracked an octave up, and one tracked an octave and a half down.
+        melody = [(0.5, 54.0), (0.2, None), (0.5, 56.0), (0.2, None), (0.6, 52.0), (0.3, None)]
+        notes, stats = run(melody + [(0.15, 64.0), (0.3, None)] + melody + [(0.2, 37.0), (0.3, None)] + melody)
+        self.assertEqual(sorted({n.midi for n in notes}), [52, 54, 56])
+        self.assertEqual(len(notes), 9)
+        self.assertAlmostEqual(stats["lostSeconds"]["outlier"], 0.35, delta=0.05)
+
+    def test_stray_note_rule_keeps_real_melody(self):
+        # A fifth away is melody, however short; a held note is kept however far.
+        melody = [(0.5, 54.0), (0.2, None), (0.5, 56.0), (0.2, None), (0.6, 52.0), (0.3, None)]
+        notes, _ = run(melody + [(0.15, 47.0), (0.3, None)] + melody + [(0.5, 66.0), (0.3, None)] + melody)
+        self.assertIn(47, [n.midi for n in notes])
+        self.assertIn(66, [n.midi for n in notes])
+        # With nothing around it there is no melody to be far from.
+        notes, _ = run([(0.3, None), (0.2, 70.0), (0.3, None)])
+        self.assertEqual([n.midi for n in notes], [70])
+
     def test_notes_are_ordered_and_do_not_overlap(self):
         rng = np.random.default_rng(1)
         parts = []

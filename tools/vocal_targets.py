@@ -15,6 +15,8 @@ A real vocal is not a clean staircase, so each step below exists for one measure
   slides        a glide that never settles produces no target (unscored, not guessed)
   breaths,      unvoiced or below the level gate: no target
   consonants
+  stray notes   a short note far from where the melody sits around it (a tracker locking
+                onto a harmonic or subharmonic for a moment) produces no target
 
 Whatever is rejected is counted by reason in `stats`, in seconds. Those are tracker
 measurements, not verified statements about the performance.
@@ -50,6 +52,11 @@ class Params:
     max_drift: float = 0.5
     #: Same-pitch notes closer than this are joined (s).
     merge_gap_s: float = 0.06
+    #: A note shorter than `outlier_max_s` and at least `outlier_semitones` from the
+    #: duration-weighted median pitch of the notes within `outlier_context_s` of it is dropped.
+    outlier_semitones: float = 9.0
+    outlier_max_s: float = 0.3
+    outlier_context_s: float = 5.0
     #: Longest run treated as an octave error rather than a real leap (s).
     octave_run_s: float = 0.15
     #: Context on each side used to judge an octave error (s).
@@ -182,6 +189,35 @@ def _segments(s: np.ndarray, voiced: np.ndarray, p: Params) -> list[tuple[int, i
     return out
 
 
+def isolated_outliers(notes: list[Note], p: Params) -> list[bool]:
+    """
+    Marks short notes that sit far from the melody around them.
+
+    A tracker can lock onto a harmonic or subharmonic for a fraction of a second, most often
+    on an isolated syllable where the frame-level octave repair has no neighbours to compare
+    with. The result is a brief note an octave or more from everything near it. Real leaps
+    that large exist, so only notes shorter than `outlier_max_s` are judged, and only against
+    at least one second of other notes within `outlier_context_s`.
+    """
+    if not notes:
+        return []
+    mid = np.array([(n.start + n.end) / 2 for n in notes])
+    dur = np.array([n.end - n.start for n in notes])
+    pitch = np.array([float(n.midi) for n in notes])
+    out = []
+    for i, n in enumerate(notes):
+        near = np.abs(mid - mid[i]) <= p.outlier_context_s
+        near[i] = False
+        if dur[i] >= p.outlier_max_s or dur[near].sum() < 1.0:
+            out.append(False)
+            continue
+        order = np.argsort(pitch[near])
+        cum = np.cumsum(dur[near][order])
+        center = pitch[near][order][int(np.searchsorted(cum, cum[-1] / 2))]
+        out.append(bool(abs(pitch[i] - center) >= p.outlier_semitones))
+    return out
+
+
 def notes_from_contour(midi: np.ndarray, voiced: np.ndarray, p: Params) -> tuple[list[Note], dict]:
     """
     Target notes from a contour.
@@ -236,6 +272,14 @@ def notes_from_contour(midi: np.ndarray, voiced: np.ndarray, p: Params) -> tuple
             notes.append(note)
             spans.append([a, b])
 
+    reason["outlier"] = np.zeros(n, dtype=bool)
+    stray = isolated_outliers(notes, p)
+    for (a, b), drop in zip(spans, stray):
+        if drop:
+            reason["outlier"][a:b] = True
+    notes = [nt for nt, drop in zip(notes, stray) if not drop]
+    spans = [sp for sp, drop in zip(spans, stray) if not drop]
+
     in_note = np.zeros(n, dtype=bool)
     for a, b in spans:
         in_note[a:b] = True
@@ -243,7 +287,7 @@ def notes_from_contour(midi: np.ndarray, voiced: np.ndarray, p: Params) -> tuple
     stats = {
         "voicedSeconds": secs(voiced_b),
         "scoredSeconds": secs(in_note),
-        "lostSeconds": {k: secs(reason[k] & ~in_note) for k in ("transition", "tooShort", "unstable")},
+        "lostSeconds": {k: secs(reason[k] & ~in_note) for k in ("transition", "tooShort", "unstable", "outlier")},
         "octaveRepairSeconds": round(octave_frames * hop, 2),
         "inNote": in_note,
         "voiced": voiced_b,
