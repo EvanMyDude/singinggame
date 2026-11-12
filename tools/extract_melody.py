@@ -76,7 +76,14 @@ def xcorr_lag(x: np.ndarray, y: np.ndarray, max_lag: int) -> tuple[int, float]:
 
 
 def measure_offset(inst: np.ndarray, full: np.ndarray) -> tuple[int, dict]:
-    """Samples by which `full` leads `inst` (negative lag: the same event is earlier in full)."""
+    """
+    Samples by which `full` leads `inst` (negative lag: the same event is earlier in full).
+
+    A window is used only when the whole search range around the coarse lag lies inside
+    `full`: where the mix starts before the instrumental, the first window has no true match
+    to find and would otherwise report a spurious lag. The speed estimate is the median of
+    the pairwise slopes, so one bad window cannot fake a drift.
+    """
     n = min(len(inst), len(full))
     # Coarse: the middle 60 s, where both carry energy.
     mid = n // 2
@@ -89,11 +96,11 @@ def measure_offset(inst: np.ndarray, full: np.ndarray) -> tuple[int, dict]:
     rows = []
     for s in range(0, n - W - 3 * SR, W):
         x = inst[s : s + W]
-        lo = max(0, s + lag - SR)
-        hi = min(len(full), s + W + lag + SR)
-        y = full[lo:hi]
-        if len(y) < W:
+        lo = s + lag - SR
+        hi = s + W + lag + SR
+        if lo < 0 or hi > len(full):
             continue
+        y = full[lo:hi]
         N = 1 << int(np.ceil(np.log2(len(y) + len(x))))
         cc = np.fft.irfft(np.fft.rfft(y - y.mean(), N) * np.conj(np.fft.rfft(x - x.mean(), N)), N)[: len(y) - len(x) + 1]
         k = int(np.argmax(np.abs(cc)))
@@ -103,7 +110,8 @@ def measure_offset(inst: np.ndarray, full: np.ndarray) -> tuple[int, dict]:
     if len(good) >= 4:
         t = np.array([g[0] for g in good])
         l = np.array([g[1] for g in good], dtype=float)
-        slope, icpt = np.polyfit(t, l, 1)
+        i, j = np.triu_indices(len(t), 1)
+        slope = float(np.median((l[j] - l[i]) / (t[j] - t[i])))
         med = float(np.median(l))
         mad = float(np.median(np.abs(l - med)))
         info = {"coarseLag": lag, "coarsePeak": peak, "windows": len(good), "medianLag": med, "madSamples": mad, "slopePpm": slope / SR * 1e6}
