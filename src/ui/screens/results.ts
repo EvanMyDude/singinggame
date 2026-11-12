@@ -3,7 +3,6 @@ import { detectedVocalCoverage, fmtSpan, fmtTime, sectionTargetCoverage, targetC
 import { timedPhraseInsights, type TimedLyricLine, type TimedLineInsight } from '../../core/phraseInsights';
 import { THRESHOLDS, pitchInsights, weakestSection, type Counts, type Judgment, type NoteResult, type PitchInsight } from '../../core/scoring';
 import type { Song } from '../../core/song';
-import { SONG } from '../../core/songpack';
 import type { AttemptRecord } from '../../core/storage';
 import type { App, Route, Screen, SessionConfig } from '../app';
 import { backButton, fmtInt, h } from '../dom';
@@ -37,7 +36,7 @@ export function resultsScreen(app: App, route: Route): Screen {
   const song = r.song;
   const flats = keyPrefersFlats(song.tonicPc, song.mode);
   const nn = (m: number) => noteNameWithOctave(m, flats);
-  const progress = app.store.progress(SONG.id);
+  const progress = app.store.progress(song.id);
   const fullRuns = progress.attempts.filter((a) => a.mode === 'sing' && a.speed === 1);
 
   const scoreEl = h('div', { class: 'score-line' }, '0');
@@ -95,7 +94,7 @@ export function resultsScreen(app: App, route: Route): Screen {
       'section',
       { class: 'results-hero' },
       h('div', { class: `big-grade grade-${r.grade}` }, r.grade),
-      h('div', { class: 'stack', style: 'gap:8px' }, h('div', { class: 'muted' }, `${SONG.title} · scored on ${cover.notes} ${targetWord}, ${fmtSpan(cover.seconds)} of ${fmtTime(r.duration)}`), scoreEl, bestLine),
+      h('div', { class: 'stack', style: 'gap:8px' }, h('div', { class: 'muted' }, `${song.title} · scored on ${cover.notes} ${targetWord}, ${fmtSpan(cover.seconds)} of ${fmtTime(r.duration)}`), scoreEl, bestLine),
     ),
     h(
       'div',

@@ -1,0 +1,57 @@
+{
+ "comment": "Lyric texts with the lines and hash both src/core/lyrics.ts and tools/prepare_song.py must produce.",
+ "cases": [
+  {
+   "text": "[Verse 1]\nline one\nline two\n\n[Chorus]\nline three\n",
+   "lines": [
+    "line one",
+    "line two",
+    "line three"
+   ],
+   "hash": "58711fe5"
+  },
+  {
+   "text": "\ufeffFirst line with a BOM\r\nsecond  line\twith   spaces\r\n\r\n[Bridge]\r\n third\u00a0line \r\n",
+   "lines": [
+    "First line with a BOM",
+    "second line with spaces",
+    "third line"
+   ],
+   "hash": "3ab0a010"
+  },
+  {
+   "text": "caf\u00e9 au lait\nna\u00efve \u2014 dash\n\ud83c\udfa4 mic drop\n",
+   "lines": [
+    "caf\u00e9 au lait",
+    "na\u00efve \u2014 dash",
+    "\ud83c\udfa4 mic drop"
+   ],
+   "hash": "a86ab86d"
+  },
+  {
+   "text": "only one line",
+   "lines": [
+    "only one line"
+   ],
+   "hash": "7fe3a23f"
+  },
+  {
+   "text": "[Intro]\n[Verse]\nrepeat\nrepeat\nrepeat\n",
+   "lines": [
+    "repeat",
+    "repeat",
+    "repeat"
+   ],
+   "hash": "d8fc3e78"
+  },
+  {
+   "text": "old mac\rline endings\r[x]\rlast",
+   "lines": [
+    "old mac",
+    "line endings",
+    "last"
+   ],
+   "hash": "fc25d147"
+  }
+ ]
+}

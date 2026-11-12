@@ -18,7 +18,7 @@ export function syncScreen(app: App): Screen {
     'div',
     { class: 'screen', style: 'max-width:1000px' },
     h('div', { class: 'topbar' }, backButton(() => app.go({ name: 'settings' }), 'Settings'), h('div', { class: 'spacer' })),
-    h('h2', { style: 'font-size:32px;margin-bottom:6px' }, 'Sync lyrics'),
+    h('h2', { style: 'font-size:32px;margin-bottom:6px' }, pack ? `Sync lyrics · ${pack.song.title}` : 'Sync lyrics'),
     body,
   );
   let destroy: () => void = () => {};
@@ -37,7 +37,7 @@ export function syncScreen(app: App): Screen {
         const f = input.files?.[0];
         if (!f) return;
         try {
-          await saveLyricsLocal(await f.text());
+          await saveLyricsLocal(pack.song, await f.text());
           await app.loadPack(true);
           app.go({ name: 'sync' });
         } catch (e) {
@@ -58,7 +58,7 @@ export function syncScreen(app: App): Screen {
           h('li', null, 'optional section headers in square brackets, e.g. [Chorus]'),
           h('li', null, 'blank lines are ignored'),
         ),
-        h('p', { class: 'muted small', style: 'margin:0' }, 'Save it as public/songs/old-town-road/lyrics.txt in the project (it is git-ignored), or pick it here to keep it in this browser.'),
+        h('p', { class: 'muted small', style: 'margin:0' }, `Save it as public/songs/${pack.song.id}/${pack.song.files.lyrics} in the project (it is git-ignored), or pick it here to keep it in this browser.`),
         h('div', { class: 'row' }, h('button', { class: 'btn primary', onclick: () => input.click() }, 'Choose lyrics.txt'), input),
         note,
       ),
@@ -78,7 +78,11 @@ export function syncScreen(app: App): Screen {
 
   // ---------- player ----------
   const rt = app.rt();
-  const player = new TrackPlayer(rt.engine, pack.instrumentalUrl, pack.referenceUrl, { referenceOffset: melody.referenceOffset, onError: (m) => status(m, 'bad') });
+  const player = new TrackPlayer(rt.engine, pack.instrumentalUrl, pack.referenceUrl, {
+    referenceOffset: melody.referenceOffset,
+    referenceMode: pack.referenceKind === 'vocal' ? 'layer' : 'replace',
+    onError: (m) => status(m, 'bad'),
+  });
   app.activePlayer = player;
   player.setVolume(app.store.settings.musicVol);
   player.setReference(!!pack.referenceUrl);
@@ -180,14 +184,14 @@ export function syncScreen(app: App): Screen {
     const filled = fillEnds(timing, melody.duration);
     const json = timingToJSON(filled).replace(/^\{/, `{\n "savedAt": ${JSON.stringify(new Date().toISOString())},`);
     try {
-      await saveTimingLocal(json);
+      await saveTimingLocal(pack.song, json);
       await app.loadPack(true);
       dirty = false;
       status(timingComplete(filled) ? 'Saved. Lyrics will follow the song in Sing and Practice.' : 'Saved (some lines are still unmarked; those will not be shown in time).', 'good');
     } catch (e) {
       status(`Could not save in this browser: ${(e as Error).message}`, 'bad');
     }
-    const a = h('a', { href: URL.createObjectURL(new Blob([json], { type: 'application/json' })), download: 'timing.json' });
+    const a = h('a', { href: URL.createObjectURL(new Blob([json], { type: 'application/json' })), download: pack.song.files.timing });
     document.body.append(a);
     a.click();
     a.remove();
@@ -259,7 +263,7 @@ export function syncScreen(app: App): Screen {
         h('button', { class: 'btn primary', onclick: () => void save() }, 'Save timing'),
       ),
       statusEl,
-      h('p', { class: 'faint tiny', style: 'margin:0' }, 'Press Space (or the Tap button) exactly when the highlighted line begins. Click any line to make it the next one to mark; use − / + to nudge, or type a time. Save writes to this browser and downloads timing.json for public/songs/old-town-road/.'),
+      h('p', { class: 'faint tiny', style: 'margin:0' }, `Press Space (or the Tap button) exactly when the highlighted line begins. Click any line to make it the next one to mark; use − / + to nudge, or type a time. Save writes to this browser and downloads ${pack.song.files.timing} for public/songs/${pack.song.id}/.`),
     ),
     h('div', { class: 'card' }, list),
   );
