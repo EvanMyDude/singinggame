@@ -11,6 +11,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit",
+    "prepare-song": "sh tools/run-python.sh tools/prepare_song.py",
     "extract": "python3 tools/extract_melody.py public/songs/old-town-road/instrumental.mp3 public/songs/old-town-road/reference.mp3 -o public/songs/old-town-road/melody.json"
   },
   "devDependencies": {
