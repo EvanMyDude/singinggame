@@ -26,7 +26,8 @@ How the target is made
   1. All audio is decoded to mono at 22.05 kHz.
   2. Alignment. The instrumental's timeline is the song timeline. With a full mix, the
      offset of the instrumental and of the vocal inside the mix are both measured by
-     cross-correlation, which places the vocal on the song timeline. Without a mix the two
+     cross-correlation and checked in 8 s windows, which places the vocal on the song
+     timeline. Without a mix the two
      stems are assumed to start together (true for stems from one separation); the
      assumption is recorded and --vocal-offset overrides it.
   3. pYIN tracks the vocal's pitch. Frames count as sung when pYIN calls them voiced and
@@ -103,12 +104,14 @@ def hash_lines(lines: list[str]) -> str:
     return f"{h:08x}"
 
 
-def check_timing(timing: object, lines: list[str] | None, duration: float | None) -> tuple[bool, list[str]]:
+def check_timing(timing: object, lines: list[str] | None, duration: float | None, notes: list[dict] | None = None) -> tuple[bool, list[str]]:
     """
     Check a timing.json document against the lyric lines. Returns (usable, messages).
 
     `usable` means the app will load it as is. Messages name every rule that failed and
-    what to change; a usable file can still carry warnings.
+    what to change; a usable file can still carry warnings. These checks cannot tell whether
+    the times are right. With the target `notes` they can tell when the timed lines do not
+    cover the singing, which is what a guessed or partial timing looks like.
     """
     msgs: list[str] = []
     if not isinstance(timing, dict):
@@ -154,6 +157,17 @@ def check_timing(timing: object, lines: list[str] | None, duration: float | None
         if late:
             usable = False
             msgs.append(f"line {late[0]} starts after the end of the instrumental ({duration:.1f} s): the times are on a different timeline")
+    timed = [(a, b if num(b) and b > a else a) for a, b in zip(starts, ends) if num(a)]
+    if notes and timed:
+        first, last = min(a for a, _ in timed), max(b for _, b in timed)
+        total = sum(n["d"] for n in notes)
+        outside = sum(n["d"] for n in notes if n["t"] + n["d"] < first - 2 or n["t"] > last + 5)
+        if total > 0 and outside / total > 0.15:
+            sung_from, sung_to = notes[0]["t"], notes[-1]["t"] + notes[-1]["d"]
+            msgs.append(
+                f"the lyric lines span {first:.1f} to {last:.1f} s, but the singing runs {sung_from:.1f} to {sung_to:.1f} s and {outside:.0f} of its {total:.0f} target seconds "
+                "fall outside the lines: the timing (or lyrics.txt) does not cover the whole song. Re-sync in the app (Settings > Sync lyrics)"
+            )
     words = sum(1 for r in rows if isinstance(r, dict) and isinstance(r.get("words"), list))
     if words:
         msgs.append(f"{words} lines carry word times")
@@ -225,47 +239,52 @@ def title_from_id(song_id: str) -> str:
 # ---------------------------------------------------------------- audio
 
 
-def stem_offset(stem: np.ndarray, mix: np.ndarray) -> tuple[int, dict]:
+def measure_lag(x: np.ndarray, mix: np.ndarray, what: str, min_corr: float, active_only: bool) -> tuple[int, dict]:
     """
-    Lag l (samples) with mix[n + l] <-> stem[n], for a stem that is one component of the mix.
+    Lag l (samples) with mix[n + l] <-> x[n], for a track `x` that is part of the mix.
 
-    Coarse over the whole file, then checked per 8 s window where the stem is active, so a
-    stem cut from a different master or running at a different speed is reported instead of
-    silently shifting every target.
+    Coarse over the whole file (up to 10 s either way), then checked per 8 s window, so a
+    track from a different master or running at a different speed is reported instead of
+    silently shifting every target. A window is used only when the whole search range
+    around the coarse lag lies inside the mix: where the mix starts before `x`, the first
+    window has no true match to find and would otherwise report a spurious lag. The speed
+    estimate is the median of the pairwise slopes, so one bad window cannot fake a drift.
+    `active_only` skips windows where `x` is nearly silent (a vocal between phrases).
     """
-    n = min(len(stem), len(mix))
-    lag, peak = xm.xcorr_lag(stem[:n] - stem[:n].mean(), mix[:n] - mix[:n].mean(), 3 * SR)
+    n = min(len(x), len(mix))
+    lag, peak = xm.xcorr_lag(x[:n] - x[:n].mean(), mix[:n] - mix[:n].mean(), 10 * SR)
     W = 8 * SR
     R = SR // 2
-    level = np.sqrt(np.mean(stem**2)) + 1e-9
+    level = np.sqrt(np.mean(x**2)) + 1e-9
     rows = []
-    for s in range(0, n - W, W):
-        x = stem[s : s + W]
+    for s in range(0, len(x) - W, W):
+        seg = x[s : s + W]
         lo = s + lag - R
         hi = s + W + lag + R
-        if lo < 0 or hi > len(mix) or np.sqrt(np.mean(x**2)) < 0.5 * level:
+        if lo < 0 or hi > len(mix) or (active_only and np.sqrt(np.mean(seg**2)) < 0.5 * level):
             continue
         y = mix[lo:hi]
-        N = 1 << int(np.ceil(np.log2(len(y) + len(x))))
-        cc = np.fft.irfft(np.fft.rfft(y - y.mean(), N) * np.conj(np.fft.rfft(x - x.mean(), N)), N)[: len(y) - len(x) + 1]
+        N = 1 << int(np.ceil(np.log2(len(y) + len(seg))))
+        cc = np.fft.irfft(np.fft.rfft(y - y.mean(), N) * np.conj(np.fft.rfft(seg - seg.mean(), N)), N)[: len(y) - len(seg) + 1]
         k = int(np.argmax(np.abs(cc)))
-        c = cc[k] / (np.sqrt((x**2).sum() * (y[k : k + len(x)] ** 2).sum()) + 1e-12)
+        c = cc[k] / (np.sqrt((seg**2).sum() * (y[k : k + len(seg)] ** 2).sum()) + 1e-12)
         rows.append((s / SR, lo + k - s, abs(float(c))))
-    good = [(t, l) for t, l, c in rows if c > 0.2]
+    good = [(t, l) for t, l, c in rows if c > min_corr]
     info: dict = {"coarseLag": int(lag), "coarsePeak": round(float(peak), 3), "windows": len(good)}
     if len(good) >= 4:
         t = np.array([g[0] for g in good])
         l = np.array([g[1] for g in good], dtype=float)
         med = float(np.median(l))
         mad = float(np.median(np.abs(l - med)))
-        slope = float(np.polyfit(t, l, 1)[0])
+        i, j = np.triu_indices(len(t), 1)
+        slope = float(np.median((l[j] - l[i]) / (t[j] - t[i])))
         info.update({"medianLag": med, "madSamples": mad, "slopePpm": round(slope / SR * 1e6, 3)})
         if abs(slope / SR) > 2e-4:
-            log(f"WARNING: the vocal and the full mix run at different speeds ({slope / SR * 1e6:.0f} ppm); one offset will not align them.")
+            log(f"WARNING: {what} and the full mix run at different speeds ({slope / SR * 1e6:.0f} ppm); one offset will not align them.")
         if mad > 0.01 * SR:
-            log(f"WARNING: per-window vocal offsets disagree (MAD {mad / SR * 1000:.1f} ms); check that the vocal was isolated from this mix.")
+            log(f"WARNING: per-window offsets of {what} disagree (MAD {mad / SR * 1000:.1f} ms); check that it comes from the same recording as the full mix.")
         return int(round(med)), info
-    log("WARNING: could not verify the vocal offset per window; using the whole-file estimate.")
+    log(f"WARNING: could not verify the offset of {what} per window; using the whole-file estimate.")
     return int(lag), info
 
 
@@ -290,7 +309,7 @@ def analyze(inst: np.ndarray, vocal: np.ndarray, mix: np.ndarray | None, referen
     alignment: dict = {}
     lag_im = 0
     if mix is not None:
-        lag_im, info = xm.measure_offset(inst, mix)
+        lag_im, info = measure_lag(inst, mix, "the instrumental", 0.3, active_only=False)
         alignment["mix"] = {k: (round(float(v), 3) if isinstance(v, (float, np.floating)) else v) for k, v in info.items()}
         log(f"offset: full mix leads instrumental by {-lag_im / SR * 1000:.1f} ms")
     if vocal_offset is not None:
@@ -298,7 +317,7 @@ def analyze(inst: np.ndarray, vocal: np.ndarray, mix: np.ndarray | None, referen
         shift = -vocal_offset
         alignment["vocal"] = {"method": "given", "offsetSeconds": vocal_offset}
     elif mix is not None:
-        lag_vm, info = stem_offset(vocal, mix)
+        lag_vm, info = measure_lag(vocal, mix, "the vocal", 0.2, active_only=True)
         # mix time = vocal time + lag_vm = song time + lag_im, so song time = vocal time + (lag_vm - lag_im).
         shift = (lag_vm - lag_im) / SR
         alignment["vocal"] = {"method": "measured", **{k: (round(float(v), 3) if isinstance(v, (float, np.floating)) else v) for k, v in info.items()}}
@@ -344,6 +363,8 @@ def analyze(inst: np.ndarray, vocal: np.ndarray, mix: np.ndarray | None, referen
 
         ms = [n["m"] for n in out_notes]
         log(f"range {librosa.midi_to_note(min(ms))} to {librosa.midi_to_note(max(ms))}; median note {np.median([n['d'] for n in out_notes]):.2f} s; mean deviation from equal temperament {dev.mean():+.1f} cents")
+        off = np.abs(dev)
+        log(f"distance of the sung pitch from its target semitone: {int((off <= 25).sum())} notes within 25 cents, {int(((off > 25) & (off <= 40)).sum())} at 25 to 40, {int((off > 40).sum())} beyond 40 (sung between two semitones)")
     else:
         log("WARNING: no target notes were produced; check that --vocal is the isolated vocal and try a larger --gate-db.")
 
@@ -419,7 +440,7 @@ def write_json(path: str, doc: object, compact: bool = False) -> None:
             fh.write("\n")
 
 
-def report_timing(folder: str, files: dict, duration: float | None) -> None:
+def report_timing(folder: str, files: dict, duration: float | None, notes: list[dict] | None = None) -> None:
     lyrics_path = os.path.join(folder, files["lyrics"])
     lines = None
     if os.path.exists(lyrics_path):
@@ -437,8 +458,9 @@ def report_timing(folder: str, files: dict, duration: float | None) -> None:
     if timing is None:
         log(f"timing: no {files['timing']} yet. Make it in the app: Settings > Sync lyrics > Save timing, then put the downloaded file in {folder}/")
         return
-    usable, msgs = check_timing(timing, lines, duration)
-    log(f"timing: {files['timing']} is " + ("usable as is" if usable else "NOT usable as is") + " (left unchanged)")
+    usable, msgs = check_timing(timing, lines, duration, notes)
+    verdict = "does NOT load in the app as is" if not usable else "loads in the app, with warnings" if msgs else "passes the format checks"
+    log(f"timing: {files['timing']} {verdict} (left unchanged). These checks cannot tell whether the times are right; watch the lyrics in the app.")
     for m in msgs:
         log(f"  - {m}")
 
@@ -476,7 +498,7 @@ def main(argv: list[str] | None = None) -> int:
         prior = (existing or {}).get("files", {})
         files = {"lyrics": os.path.basename(args.lyrics) if args.lyrics else prior.get("lyrics", "lyrics.txt"), "timing": prior.get("timing", "timing.json")}
         melody = read_json(os.path.join(folder, prior.get("melody", "melody.json")))
-        report_timing(folder, files, melody.get("duration") if isinstance(melody, dict) else None)
+        report_timing(folder, files, melody.get("duration") if isinstance(melody, dict) else None, melody.get("notes") if isinstance(melody, dict) else None)
         return 0
 
     files = resolve_files(folder, existing, args)
@@ -540,7 +562,7 @@ def main(argv: list[str] | None = None) -> int:
         else:
             log(f"{song_id} is already registered in {index_path}")
 
-    report_timing(folder, files, doc["duration"])
+    report_timing(folder, files, doc["duration"], doc["notes"])
     if args.plot:
         write_plot(args.plot, doc, plot)
     return 0

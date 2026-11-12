@@ -92,6 +92,15 @@ class CheckTiming(unittest.TestCase):
         self.assertTrue(ok)
         self.assertIn("no start time", " ".join(msgs))
 
+    def test_lines_that_do_not_cover_the_singing_are_reported(self):
+        # Singing from 3 s to 200 s; the three lines end at 5 s.
+        notes = [{"t": float(t), "d": 0.8, "m": 60, "c": 0} for t in range(3, 200)]
+        ok, msgs = ps.check_timing(self.doc(), self.LINES, 240.0, notes)
+        self.assertTrue(ok)
+        self.assertIn("does not cover the whole song", " ".join(msgs))
+        covered = [{"t": 1.0, "d": 0.8, "m": 60, "c": 0}, {"t": 2.6, "d": 0.3, "m": 62, "c": 0}, {"t": 4.1, "d": 0.8, "m": 60, "c": 0}]
+        self.assertEqual(ps.check_timing(self.doc(), self.LINES, 10.0, covered), (True, []))
+
     def test_without_lyrics_the_hash_is_not_judged(self):
         ok, msgs = ps.check_timing(self.doc(hash="deadbeef"), None, 10.0)
         self.assertTrue(ok)
@@ -183,6 +192,64 @@ class PrepareSyntheticSong(unittest.TestCase):
             self.assertEqual(json.load(fh)["title"], "Demo Song")
         with open(os.path.join(os.path.dirname(self.folder), "index.json"), encoding="utf-8") as fh:
             self.assertEqual(json.load(fh)["songs"], ["demo-song"])
+
+
+@unittest.skipUnless(HAVE_AUDIO, "needs librosa, scipy and soundfile (pip install -r tools/requirements.txt)")
+class MeasureLag(unittest.TestCase):
+    """The offset check when the mix starts seconds before the other files, as real files do."""
+
+    def test_mix_that_starts_earlier_is_not_reported_as_a_speed_difference(self):
+        import numpy as np
+        import synth_song
+
+        notes, duration = synth_song.repeated(5)
+        v, b = synth_song.vocal(notes, duration), synth_song.backing(duration)
+        mix = v + b
+        inst = synth_song.delayed(b, 2.384)
+        vocal = synth_song.delayed(v, 0.311)[: len(v) - synth_song.SR]
+        lag, info = ps.measure_lag(inst, mix, "the instrumental", 0.3, active_only=False)
+        self.assertEqual(lag, -int(round(2.384 * synth_song.SR)))
+        self.assertGreaterEqual(info["windows"], 4)
+        self.assertLess(abs(info["slopePpm"]), 5)
+        self.assertLess(info["madSamples"], 2)
+        lag, info = ps.measure_lag(vocal, mix, "the vocal", 0.2, active_only=True)
+        self.assertEqual(lag, -int(round(0.311 * synth_song.SR)))
+        self.assertLess(abs(info["slopePpm"]), 5)
+
+    def test_one_bad_window_does_not_fake_a_drift(self):
+        import numpy as np
+        import synth_song
+
+        notes, duration = synth_song.repeated(6)
+        b = synth_song.backing(duration)
+        mix = b + synth_song.vocal(notes, duration)
+        inst = synth_song.delayed(b, 0.5).copy()
+        # Replace one window of the instrumental with a copy of an earlier stretch: it then
+        # matches the mix at the wrong place.
+        W = 8 * synth_song.SR
+        inst[3 * W : 4 * W] = inst[3 * W - 9000 : 4 * W - 9000]
+        lag, info = ps.measure_lag(inst, mix, "the instrumental", 0.3, active_only=False)
+        self.assertEqual(lag, -int(round(0.5 * synth_song.SR)))
+        self.assertLess(abs(info["slopePpm"]), 5)
+
+    def test_a_real_speed_difference_is_still_reported(self):
+        import librosa
+        import numpy as np
+        import synth_song
+        from scipy.signal import butter, sosfiltfilt
+
+        n = 80 * synth_song.SR
+        # Low-passed noise stays correlated over a few milliseconds of drift, as bass does.
+        low = sosfiltfilt(butter(4, 80, fs=synth_song.SR, output="sos"), np.random.default_rng(5).standard_normal(n)).astype(np.float32)
+        slow = librosa.resample(low, orig_sr=10000, target_sr=10004, res_type="soxr_hq")  # 400 ppm longer
+        _, info = ps.measure_lag(slow, low, "the instrumental", 0.3, active_only=False)
+        self.assertGreaterEqual(info["windows"], 4)
+        self.assertAlmostEqual(abs(info["slopePpm"]), 400, delta=60)
+        # Broadband content decorrelates instead: the offset is then reported as unverified.
+        wide = synth_song.backing(66.0)
+        slow = librosa.resample(wide, orig_sr=10000, target_sr=10010, res_type="soxr_hq")
+        _, info = ps.measure_lag(slow, wide, "the instrumental", 0.3, active_only=False)
+        self.assertLess(info["windows"], 4)
 
 
 @unittest.skipUnless(HAVE_AUDIO, "needs librosa, scipy and soundfile (pip install -r tools/requirements.txt)")
