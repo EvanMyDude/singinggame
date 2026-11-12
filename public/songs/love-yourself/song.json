@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "id": "love-yourself",
+  "title": "Love Yourself",
+  "artist": "JB",
+  "files": {
+    "instrumental": "Love Yourself Instrumental.mp3",
+    "reference": "Love Yourself Full.mp3",
+    "vocal": "Love Yourself (Vocals Only).mp3",
+    "lyrics": "lyrics.txt",
+    "timing": "timing.json",
+    "melody": "melody.json"
+  },
+  "referenceKind": "mix",
+  "targets": {
+    "source": "isolated-vocal"
+  }
+}
