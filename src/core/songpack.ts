@@ -1,21 +1,22 @@
 import { idb } from './idb';
 import { parseLyrics, parseTiming, timingMatches, type LyricTiming, type LyricsDoc } from './lyrics';
 import { parseMelody, type MelodyData } from './melody';
+import { baseUrl, fetchStaticText, songFileUrl, type ReferenceKind, type SongDef } from './songs';
 
 /**
- * The one song and its files. Files are looked up in two places: the static folder
- * `public/songs/<id>/` (served by Vite in development; the media and lyric text are
- * git-ignored so they never reach the public site) and IndexedDB, where the "Load song files"
- * card stores what the user picks on the deployed site. Timing can come from either; the
- * newer one wins so an in-app sync edit is not shadowed by an older committed file.
+ * A song's files. Each is looked up in two places: the static folder `public/songs/<id>/`
+ * (served by Vite in development; the media and lyric text are git-ignored so they never
+ * reach the public site) and IndexedDB, where the "Song files" card stores what the user
+ * picks on the deployed site. Timing can come from either; the newer one wins so an in-app
+ * sync edit is not shadowed by an older committed file.
  */
-
-export const SONG = { id: 'old-town-road', title: 'Old Town Road', artist: 'Lil Nas X' } as const;
 
 export type PackFileKey = 'instrumental' | 'reference' | 'melody' | 'lyrics' | 'timing';
 export type FileSource = 'static' | 'local' | 'missing';
 
 export interface PackFileSpec {
+  key: PackFileKey;
+  /** File name inside the song folder. */
   name: string;
   kind: 'audio' | 'json' | 'text';
   required: boolean;
@@ -23,24 +24,38 @@ export interface PackFileSpec {
   hint: string;
 }
 
-export const PACK_FILES: Record<PackFileKey, PackFileSpec> = {
-  instrumental: { name: 'instrumental.mp3', kind: 'audio', required: true, label: 'Instrumental (karaoke) track', hint: 'Old Town Road - Karaoke.mp3' },
-  reference: { name: 'reference.mp3', kind: 'audio', required: false, label: 'Reference track with vocals', hint: 'Old Town Road with Vocals.mp3' },
-  melody: { name: 'melody.json', kind: 'json', required: true, label: 'Target melody (melody.json)', hint: 'made by tools/extract_melody.py; committed in the repo' },
-  lyrics: { name: 'lyrics.txt', kind: 'text', required: false, label: 'Lyrics text (lyrics.txt)', hint: 'one lyric line per line; [Section] headers allowed' },
-  timing: { name: 'timing.json', kind: 'json', required: false, label: 'Lyric timing (timing.json)', hint: 'made with Settings → Sync lyrics' },
-};
+/** The file slots the app uses for a song, in display order. */
+export function packFiles(song: SongDef): PackFileSpec[] {
+  const f = song.files;
+  const out: PackFileSpec[] = [{ key: 'instrumental', name: f.instrumental, kind: 'audio', required: true, label: 'Instrumental (karaoke) track', hint: 'the track you sing over' }];
+  if (f.reference !== null) {
+    out.push(
+      song.referenceKind === 'vocal'
+        ? { key: 'reference', name: f.reference, kind: 'audio', required: false, label: 'Isolated vocal (reference)', hint: 'plays over the instrumental with Reference vocal on' }
+        : { key: 'reference', name: f.reference, kind: 'audio', required: false, label: 'Reference track with vocals', hint: 'the full song; plays with Reference vocal on' },
+    );
+  }
+  out.push(
+    { key: 'melody', name: f.melody, kind: 'json', required: true, label: 'Target melody (melody.json)', hint: `made by ${song.targetSource === 'mix-subtraction' ? 'tools/extract_melody.py' : 'npm run prepare-song'}; committed in the repo` },
+    { key: 'lyrics', name: f.lyrics, kind: 'text', required: false, label: 'Lyrics text (lyrics.txt)', hint: 'one lyric line per line; [Section] headers allowed' },
+    { key: 'timing', name: f.timing, kind: 'json', required: false, label: 'Lyric timing (timing.json)', hint: 'made with Settings → Sync lyrics' },
+  );
+  return out;
+}
 
 export interface SongPack {
+  song: SongDef;
   melody: MelodyData;
   instrumentalUrl: string;
   referenceUrl: string | null;
+  referenceKind: ReferenceKind;
   lyrics: LyricsDoc | null;
   timing: LyricTiming | null;
   sources: Record<PackFileKey, FileSource>;
 }
 
 export interface PackStatus {
+  song: SongDef;
   /** Null until the required files (instrumental + melody) are available. */
   pack: SongPack | null;
   sources: Record<PackFileKey, FileSource>;
@@ -48,12 +63,8 @@ export interface PackStatus {
   errors: string[];
 }
 
-const LOCAL_KEY = (k: PackFileKey) => `${SONG.id}/${k}`;
-
-function staticUrl(key: PackFileKey): string {
-  const base = import.meta.env.BASE_URL.endsWith('/') ? import.meta.env.BASE_URL : `${import.meta.env.BASE_URL}/`;
-  return `${base}songs/${SONG.id}/${PACK_FILES[key].name}`;
-}
+/** IndexedDB key of a picked file. The format predates multiple songs and must not change. */
+const LOCAL_KEY = (songId: string, k: PackFileKey) => `${songId}/${k}`;
 
 /** True when the static file exists (dev servers answer unknown paths with index.html). */
 async function staticExists(url: string): Promise<boolean> {
@@ -68,70 +79,68 @@ async function staticExists(url: string): Promise<boolean> {
   }
 }
 
-async function fetchStaticText(url: string): Promise<string | null> {
-  try {
-    const res = await fetch(url, { cache: 'no-store' });
-    if (!res.ok) return null;
-    const ct = res.headers.get('content-type') ?? '';
-    if (ct.includes('text/html')) return null;
-    return await res.text();
-  } catch {
-    return null;
-  }
-}
+const objectUrls = new Map<string, string>();
 
-const objectUrls = new Map<PackFileKey, string>();
-
-function blobUrl(key: PackFileKey, blob: Blob): string {
-  const old = objectUrls.get(key);
+function blobUrl(songId: string, key: PackFileKey, blob: Blob): string {
+  const id = LOCAL_KEY(songId, key);
+  const old = objectUrls.get(id);
   if (old) URL.revokeObjectURL(old);
   const url = URL.createObjectURL(blob);
-  objectUrls.set(key, url);
+  objectUrls.set(id, url);
   return url;
 }
 
-let cached: Promise<PackStatus> | null = null;
+const cached = new Map<string, Promise<PackStatus>>();
 
-export function loadPack(force = false): Promise<PackStatus> {
-  if (!cached || force) cached = loadPackUncached();
-  return cached;
+export function loadPack(song: SongDef, force = false): Promise<PackStatus> {
+  let p = force ? undefined : cached.get(song.id);
+  if (!p) {
+    p = loadPackUncached(song);
+    cached.set(song.id, p);
+  }
+  return p;
 }
 
-async function localBlob(key: PackFileKey): Promise<Blob | null> {
+async function localBlob(song: SongDef, spec: PackFileSpec): Promise<Blob | null> {
   try {
-    const v = await idb.get<Blob | string>(LOCAL_KEY(key));
+    const v = await idb.get<Blob | string>(LOCAL_KEY(song.id, spec.key));
     if (v instanceof Blob) return v;
-    if (typeof v === 'string') return new Blob([v], { type: PACK_FILES[key].kind === 'json' ? 'application/json' : 'text/plain' });
+    if (typeof v === 'string') return new Blob([v], { type: spec.kind === 'json' ? 'application/json' : 'text/plain' });
     return null;
   } catch {
     return null;
   }
 }
 
-async function loadPackUncached(): Promise<PackStatus> {
+async function loadPackUncached(song: SongDef): Promise<PackStatus> {
   const sources: Record<PackFileKey, FileSource> = { instrumental: 'missing', reference: 'missing', melody: 'missing', lyrics: 'missing', timing: 'missing' };
   const errors: string[] = [];
+  const specs = new Map(packFiles(song).map((s) => [s.key, s]));
+  const base = baseUrl();
 
   // Audio: static first (dev), then local.
   const audioUrl = async (key: 'instrumental' | 'reference'): Promise<string | null> => {
-    const url = staticUrl(key);
+    const spec = specs.get(key);
+    if (!spec) return null;
+    const url = songFileUrl(base, song.id, spec.name);
     if (await staticExists(url)) {
       sources[key] = 'static';
       return url;
     }
-    const blob = await localBlob(key);
+    const blob = await localBlob(song, spec);
     if (blob) {
       sources[key] = 'local';
-      return blobUrl(key, blob);
+      return blobUrl(song.id, key, blob);
     }
     return null;
   };
 
   const textOf = async (key: 'melody' | 'lyrics' | 'timing'): Promise<{ text: string; source: FileSource }[]> => {
+    const spec = specs.get(key)!;
     const out: { text: string; source: FileSource }[] = [];
-    const st = await fetchStaticText(staticUrl(key));
+    const st = await fetchStaticText(songFileUrl(base, song.id, spec.name));
     if (st !== null) out.push({ text: st, source: 'static' });
-    const blob = await localBlob(key);
+    const blob = await localBlob(song, spec);
     if (blob) out.push({ text: await blob.text(), source: 'local' });
     return out;
   };
@@ -189,20 +198,47 @@ async function loadPackUncached(): Promise<PackStatus> {
     }
   }
 
-  const missing = (Object.keys(PACK_FILES) as PackFileKey[]).filter((k) => sources[k] === 'missing');
+  const missing = [...specs.keys()].filter((k) => sources[k] === 'missing');
   const pack: SongPack | null =
-    instrumentalUrl && melody ? { melody, instrumentalUrl, referenceUrl, lyrics, timing, sources } : null;
-  return { pack, sources, missing, errors };
+    instrumentalUrl && melody ? { song, melody, instrumentalUrl, referenceUrl, referenceKind: referenceUrl ? song.referenceKind : 'none', lyrics, timing, sources } : null;
+  return { song, pack, sources, missing, errors };
 }
 
-/** Guess which slot a picked file belongs to from its name and type. */
-export function classifyFile(file: File): PackFileKey | null {
+const AUDIO_NAME = /\.(mp3|m4a|wav|ogg|aac|flac)$/;
+
+/**
+ * What an audio file is, from its name: the track to sing over, an isolated vocal, or the
+ * full mix. Checked in this order because "vocals only" also contains "vocal" and "no
+ * vocals" is an instrumental. Kept in step with `classify` in tools/prepare_song.py.
+ */
+export function audioRole(fileName: string): 'instrumental' | 'vocal' | 'mix' | null {
+  const stem = fileName.toLowerCase().replace(AUDIO_NAME, '');
+  if (stem === 'instrumental') return 'instrumental';
+  if (stem === 'vocal' || stem === 'vocals') return 'vocal';
+  if (stem === 'reference' || stem === 'mix' || stem === 'full') return 'mix';
+  if (/karaoke|instrumental|\binst\b|backing|minus|\bno[ _-]?vocals?|without[ _-]vocals?/.test(stem)) return 'instrumental';
+  if (/vocals?[ _-]?only|only[ _-]?vocals?|a[ _-]?cap+el+a|isolated|lead[ _-]?vocals?|vocal[ _-]?stem|^vocals?\b|\(vocals?\)/.test(stem)) return 'vocal';
+  if (/\bfull\b|with[ _-]vocals?|original|\bmix\b|reference/.test(stem)) return 'mix';
+  return null;
+}
+
+/**
+ * Which slot of this song a picked file belongs to: the definition's own file names first,
+ * then the name's wording. An isolated vocal is not the reference of a song whose reference
+ * is the full mix, so it is left unassigned rather than played as one.
+ */
+export function classifyFile(file: { name: string; type: string }, song: SongDef): PackFileKey | null {
   const n = file.name.toLowerCase();
-  const isAudio = file.type.startsWith('audio/') || /\.(mp3|m4a|wav|ogg|aac|flac)$/.test(n);
+  const specs = packFiles(song);
+  const exact = specs.find((s) => s.name.toLowerCase() === n);
+  if (exact) return exact.key;
+  const isAudio = file.type.startsWith('audio/') || AUDIO_NAME.test(n);
   if (isAudio) {
-    if (/karaoke|instrumental|inst\b|backing|minus/.test(n)) return 'instrumental';
-    if (/vocal|reference|original|with/.test(n)) return 'reference';
-    return null;
+    const role = audioRole(n);
+    if (role === 'instrumental') return 'instrumental';
+    if (song.referenceKind === 'none') return null;
+    if (role !== null) return role === song.referenceKind ? 'reference' : null;
+    return /vocal/.test(n) ? 'reference' : null;
   }
   if (n === 'melody.json' || /melody.*\.json$/.test(n)) return 'melody';
   if (n === 'timing.json' || /timing.*\.json$/.test(n)) return 'timing';
@@ -211,12 +247,13 @@ export function classifyFile(file: File): PackFileKey | null {
 }
 
 /** Validate and store a picked file for a slot. Throws with a readable message. */
-export async function importFile(key: PackFileKey, file: File): Promise<void> {
-  const spec = PACK_FILES[key];
+export async function importFile(song: SongDef, key: PackFileKey, file: File): Promise<void> {
+  const spec = packFiles(song).find((s) => s.key === key);
+  if (!spec) throw new Error(`${song.title} has no ${key} file.`);
   if (spec.kind === 'audio') {
     if (!(file.type.startsWith('audio/') || /\.(mp3|m4a|wav|ogg|aac|flac)$/i.test(file.name))) throw new Error(`${file.name} is not an audio file.`);
     if (file.size < 100_000) throw new Error(`${file.name} is too small to be the full track.`);
-    await idb.put(LOCAL_KEY(key), file);
+    await idb.put(LOCAL_KEY(song.id, key), file);
   } else {
     const text = await file.text();
     if (spec.kind === 'json') {
@@ -226,24 +263,24 @@ export async function importFile(key: PackFileKey, file: File): Promise<void> {
     } else if (!parseLyrics(text).lines.length) {
       throw new Error('No lyric lines found in the text file.');
     }
-    await idb.put(LOCAL_KEY(key), text);
+    await idb.put(LOCAL_KEY(song.id, key), text);
   }
-  cached = null;
+  cached.delete(song.id);
 }
 
-export async function removeLocal(key: PackFileKey): Promise<void> {
-  await idb.delete(LOCAL_KEY(key));
-  cached = null;
+export async function removeLocal(song: SongDef, key: PackFileKey): Promise<void> {
+  await idb.delete(LOCAL_KEY(song.id, key));
+  cached.delete(song.id);
 }
 
-/** Save lyric timing from the sync tool (local store) and return the downloadable JSON. */
-export async function saveTimingLocal(json: string): Promise<void> {
-  await idb.put(LOCAL_KEY('timing'), json);
-  cached = null;
+/** Save lyric timing from the sync tool (local store). */
+export async function saveTimingLocal(song: SongDef, json: string): Promise<void> {
+  await idb.put(LOCAL_KEY(song.id, 'timing'), json);
+  cached.delete(song.id);
 }
 
-export async function saveLyricsLocal(text: string): Promise<void> {
+export async function saveLyricsLocal(song: SongDef, text: string): Promise<void> {
   if (!parseLyrics(text).lines.length) throw new Error('No lyric lines found.');
-  await idb.put(LOCAL_KEY('lyrics'), text);
-  cached = null;
+  await idb.put(LOCAL_KEY(song.id, 'lyrics'), text);
+  cached.delete(song.id);
 }

@@ -4,8 +4,11 @@ import { CtxClock, SmoothClock } from './songClock';
 /**
  * Plays the instrumental and the reference recording as two HTMLMediaElements routed through
  * Web Audio. Both play at once, time-aligned by `referenceOffset`; "Reference Vocal" only
- * crossfades their gains, so toggling never restarts or loses the position. The media
+ * changes their gains, so toggling never restarts or loses the position. The media
  * element does the pitch-preserving time stretch for practice speeds (`preservesPitch`).
+ *
+ * The reference is either the full mix, which replaces the instrumental while it is on, or
+ * an isolated vocal, which is layered over the instrumental (`referenceMode`).
  *
  * Song time is the instrumental's timeline (what the melody and lyric timing use).
  */
@@ -13,6 +16,8 @@ import { CtxClock, SmoothClock } from './songClock';
 export interface TrackPlayerOptions {
   /** Reference time = song time + offset (s). */
   referenceOffset: number;
+  /** `replace` (default): the reference is a full mix. `layer`: it is a vocal on top of the instrumental. */
+  referenceMode?: 'replace' | 'layer';
   onEnded?: () => void;
   onLoop?: () => void;
   onError?: (message: string) => void;
@@ -34,6 +39,7 @@ export class TrackPlayer {
   private readonly smooth = new SmoothClock();
   private readonly ctxClock = new CtxClock();
   private reference = false;
+  private readonly layer: boolean;
   private rate = 1;
   private loopA: number | null = null;
   private loopB: number | null = null;
@@ -45,6 +51,7 @@ export class TrackPlayer {
   constructor(engine: AudioEngine, instrumentalUrl: string, referenceUrl: string | null, opts: TrackPlayerOptions) {
     this.engine = engine;
     this.opts = opts;
+    this.layer = opts.referenceMode === 'layer';
     const ctx = engine.ctx;
     this.master = ctx.createGain();
     this.master.connect(ctx.destination);
@@ -138,9 +145,14 @@ export class TrackPlayer {
     return this.smooth.now(now);
   }
 
-  /** Song time straight from the audible element. */
+  /** True when the reference is the only audible element (a full mix replacing the instrumental). */
+  private get referenceLeads(): boolean {
+    return this.reference && this.ref !== null && !this.layer;
+  }
+
+  /** Song time straight from the element that carries the backing. */
   rawTime(): number {
-    if (this.reference && this.ref) return this.ref.el.currentTime - this.opts.referenceOffset;
+    if (this.referenceLeads) return this.ref!.el.currentTime - this.opts.referenceOffset;
     return this.inst.el.currentTime;
   }
 
@@ -192,7 +204,7 @@ export class TrackPlayer {
     if (!this.ref) return;
     this.reference = on;
     const t = this.engine.ctx.currentTime;
-    this.inst.gain.gain.setTargetAtTime(on ? 0 : 1, t, 0.03);
+    this.inst.gain.gain.setTargetAtTime(on && !this.layer ? 0 : 1, t, 0.03);
     this.ref.gain.gain.setTargetAtTime(on ? 1 : 0, t, 0.03);
     // The clock source changed elements; re-anchor so the switch is not seen as a jump.
     this.smooth.reset(this.rawTime(), performance.now());
@@ -244,12 +256,12 @@ export class TrackPlayer {
       this.opts.onLoop?.();
       return;
     }
-    // Keep the muted element within tolerance of the audible one (never touch the audible one).
+    // Keep the other element within tolerance of the one carrying the backing (never touch that one).
     if (this.ref && now - this.lastSync > 500) {
       this.lastSync = now;
       const drift = this.ref.el.currentTime - (this.inst.el.currentTime + this.opts.referenceOffset);
       if (Math.abs(drift) > SYNC_TOLERANCE) {
-        if (this.reference) this.inst.el.currentTime = this.ref.el.currentTime - this.opts.referenceOffset;
+        if (this.referenceLeads) this.inst.el.currentTime = this.ref.el.currentTime - this.opts.referenceOffset;
         else this.ref.el.currentTime = this.inst.el.currentTime + this.opts.referenceOffset;
       }
     }

@@ -1,8 +1,7 @@
 import { fmtTime } from '../../core/melody';
-import { SONG } from '../../core/songpack';
 import type { App, Screen } from '../app';
 import { packFilesCard } from '../components/packFiles';
-import { brandMark, fmtInt, h, icon } from '../dom';
+import { brandMark, fmtInt, h, icon, segmented } from '../dom';
 
 export function homeScreen(app: App): Screen {
   const s = app.store.settings;
@@ -10,16 +9,43 @@ export function homeScreen(app: App): Screen {
   const status = h('div', { class: 'status-row' });
   const actions = h('div', { class: 'row', style: 'margin-top:24px' });
   const filesHost = h('div');
-  const best = app.store.progress(SONG.id).best;
-  const last = app.store.lastPosition(SONG.id);
+  const pickerHost = h('div');
+  const titleEl = h('h1');
+  const blurbEl = h('p');
+  const bestHost = h('div');
+  const registryNote = h('div', { class: 'notice warn', style: 'display:none;margin-top:18px' });
 
+  const choose = (id: string) => {
+    app.selectSong(id);
+    renderStatus();
+    void app.loadPack().then(renderStatus);
+  };
+
+  /** Everything that depends on the current song: called again when the list or the files load. */
   const renderStatus = () => {
-    const ps = app.packStatus;
+    const song = app.song;
+    const ps = song && app.packStatus?.song.id === song.id ? app.packStatus : null;
     const ready = !!ps?.pack;
+    const best = song ? app.store.progress(song.id).best : null;
+    const last = song ? app.store.lastPosition(song.id) : 0;
+    pickerHost.replaceChildren(
+      song && app.songs.length > 1
+        ? h('div', { class: 'row', style: 'margin-bottom:14px' }, segmented(app.songs.map((x) => ({ value: x.id, label: x.title })), song.id, choose, 'Song'))
+        : h('div'),
+    );
+    titleEl.textContent = song ? song.title : 'Pitch Hero';
+    blurbEl.textContent = song
+      ? `${song.artist ? `${song.artist} · ` : ''}karaoke instrumental with a live pitch monitor, synced lyrics, slow-down practice and A–B looping.`
+      : app.registryErrors.length ? 'No song could be loaded.' : 'Loading songs…';
+    bestHost.replaceChildren(
+      best ? h('div', { class: 'row', style: 'margin-top:14px' }, h('span', { class: `grade-badge grade-${best.grade}` }, best.grade), h('span', { class: 'muted' }, `Best ${fmtInt(best.score)} · ${Math.round(best.accuracy)}% pitch accuracy`)) : h('div'),
+    );
+    registryNote.textContent = app.registryErrors.join(' · ');
+    registryNote.style.display = app.registryErrors.length ? '' : 'none';
     const latencyLabel = s.latencyMs !== null ? `Latency ${Math.round(s.latencyMs)} ms` : 'Latency: auto';
     status.replaceChildren(
       ...[
-      h('span', { class: `chip ${ready ? 'ok' : 'warn'}` }, h('i', { class: 'dot' }), !ps ? 'Checking song files…' : ready ? (ps.pack!.referenceUrl ? 'Song files ready' : 'Instrumental ready · no reference track') : 'Song files needed'),
+      h('span', { class: `chip ${ready ? 'ok' : 'warn'}` }, h('i', { class: 'dot' }), !song ? 'No song' : !ps ? 'Checking song files…' : ready ? (ps.pack!.referenceUrl ? 'Song files ready' : 'Instrumental ready · no reference track') : 'Song files needed'),
       h('span', { class: `chip ${app.micReady ? 'ok' : ''}` }, h('i', { class: 'dot' }), app.micReady ? 'Mic ready' : 'Mic: asks when you start'),
       h('span', { class: `chip ${s.latencyMs !== null ? 'ok' : ''}` }, h('i', { class: 'dot' }), latencyLabel),
       h('span', { class: `chip ${s.headphones ? 'accent' : 'warn'}` }, s.headphones ? 'Headphones' : 'Speakers'),
@@ -35,8 +61,8 @@ export function homeScreen(app: App): Screen {
         : null,
       ].filter((x) => x !== null),
     );
-    filesHost.replaceChildren(ready ? h('div') : packFilesCard(app, renderStatus));
-    if (!ready && ps) filesHost.prepend(h('p', { class: 'muted', style: 'margin:18px 0 10px' }, 'This site does not ship the song audio. Pick the two MP3s (and lyrics.txt) once; they stay in this browser.'));
+    filesHost.replaceChildren(ready || !ps ? h('div') : packFilesCard(app, renderStatus));
+    if (!ready && ps) filesHost.prepend(h('p', { class: 'muted', style: 'margin:18px 0 10px' }, `This site does not ship the song audio. Pick the MP3s (and lyrics.txt) for ${ps.song.title} once; they stay in this browser.`));
   };
 
   const el = h(
@@ -55,12 +81,14 @@ export function homeScreen(app: App): Screen {
       { class: 'hero' },
       wave.el,
       h('div', { class: 'hud-label' }, 'Practice song'),
-      h('h1', null, SONG.title),
-      h('p', null, `${SONG.artist} · karaoke instrumental with a live pitch monitor, synced lyrics, slow-down practice and A–B looping.`),
+      pickerHost,
+      titleEl,
+      blurbEl,
       actions,
       status,
-      best ? h('div', { class: 'row', style: 'margin-top:14px' }, h('span', { class: `grade-badge grade-${best.grade}` }, best.grade), h('span', { class: 'muted' }, `Best ${fmtInt(best.score)} · ${Math.round(best.accuracy)}% pitch accuracy`)) : null,
+      bestHost,
     ),
+    registryNote,
     filesHost,
     h(
       'div',

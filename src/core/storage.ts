@@ -49,6 +49,8 @@ export interface SaveData {
   progress: Record<string, SongProgress>;
   /** Last playback position per song (s), for "resume where you left off". */
   lastPosition: Record<string, number>;
+  /** Id of the song last chosen on the home screen. */
+  currentSong?: string;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -146,6 +148,16 @@ export class Store {
 
   updateSettings(patch: Partial<Settings>): void {
     this.data.settings = { ...this.data.settings, ...patch };
+    this.save();
+  }
+
+  get currentSong(): string | null {
+    return typeof this.data.currentSong === 'string' ? this.data.currentSong : null;
+  }
+
+  setCurrentSong(songId: string): void {
+    if (this.data.currentSong === songId) return;
+    this.data.currentSong = songId;
     this.save();
   }
 

@@ -1,5 +1,7 @@
 .DEFAULT_GOAL := help
-.PHONY: help install dev build preview test typecheck check clean extract
+.PHONY: help install dev build preview test typecheck check clean extract song-tools prepare-song test-tools
+
+PY := $(if $(wildcard .venv/bin/python),.venv/bin/python,python3)
 
 help: ## List available targets
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-10s\033[0m %s\n", $$1, $$2}'
@@ -27,5 +29,16 @@ check: typecheck test ## Type-check and run tests
 clean: ## Remove build output
 	rm -rf dist
 
-extract: ## Rebuild public/songs/old-town-road/melody.json from the two MP3s (needs python3 + numpy/scipy/librosa/soundfile)
+song-tools: ## Create .venv with the Python packages the song tools need (once)
+	python3 -m venv .venv
+	.venv/bin/pip install -r tools/requirements.txt
+
+prepare-song: ## Build a song package from its audio: make prepare-song SONG=<id> [ARGS='--title "..." --artist "..."']
+	@test -n "$(SONG)" || { echo 'usage: make prepare-song SONG=<folder name under public/songs> [ARGS="--title ... --artist ..."]'; exit 2; }
+	$(PY) tools/prepare_song.py public/songs/$(SONG) $(ARGS)
+
+test-tools: ## Run the Python tool tests (the audio test needs make song-tools)
+	$(PY) -m unittest discover -s tests -p 'test_*.py'
+
+extract: ## Old Town Road only: rebuild its melody.json from instrumental + full mix (no isolated vocal)
 	npm run extract

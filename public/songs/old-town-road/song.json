@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "id": "old-town-road",
+  "title": "Old Town Road",
+  "artist": "Lil Nas X",
+  "files": {
+    "instrumental": "instrumental.mp3",
+    "reference": "reference.mp3",
+    "lyrics": "lyrics.txt",
+    "timing": "timing.json",
+    "melody": "melody.json"
+  },
+  "referenceKind": "mix",
+  "targets": {
+    "source": "mix-subtraction"
+  }
+}

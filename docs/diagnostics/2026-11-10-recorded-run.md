@@ -65,7 +65,7 @@ The feedback patch does not overwrite the file or expand its target set.
 
 ## Closing the evidence gap
 
-Follow the [separate-output reproduction procedure](../SONG_PACK.md#melody-extraction).
+Follow the [separate-output reproduction procedure](../SONG_PACK.md#old-town-road).
 Retain the generated derived report with its complete run identity, output hash and exact
 versions. Link numerical diagnostic claims to that report. Keep audio, residual audio,
 private lyrics and personal paths out of committed evidence. A replacement run can confirm

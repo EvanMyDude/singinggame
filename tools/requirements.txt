@@ -1,0 +1,7 @@
+# Offline song preparation (tools/prepare_song.py, tools/extract_melody.py). Not needed to run the app.
+numpy>=1.26
+scipy>=1.11
+librosa>=0.10
+soundfile>=0.12
+# Only for --plot:
+matplotlib>=3.8

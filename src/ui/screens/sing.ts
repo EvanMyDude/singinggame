@@ -6,7 +6,6 @@ import { centsError, foldToOctaveOf, noteNameWithOctave } from '../../core/music
 import { buildTimedLyricLines } from '../../core/phraseInsights';
 import { ScoreEngine, THRESHOLDS, gradeFor, multiplierFor, zoneFor, type Judgment, type NoteResult, type Zone } from '../../core/scoring';
 import type { Note, Song } from '../../core/song';
-import { SONG } from '../../core/songpack';
 import { TargetAvailability } from '../../core/targetAvailability';
 import { SPEEDS, type Speed } from '../../core/storage';
 import type { App, Route, Screen, SessionConfig } from '../app';
@@ -15,8 +14,8 @@ import { Highway, type TrailPt } from '../render/highway';
 import type { AttemptResult } from './results';
 
 /**
- * Sing / Practice: the instrumental (or the reference track) plays while the note highway
- * shows the extracted melody and the live voice trail, lyrics follow the song clock, and in
+ * Sing / Practice: the current song's instrumental (or its reference track) plays while the
+ * note highway shows the song's target melody and the live voice trail, lyrics follow the song clock, and in
  * Sing mode the ScoreEngine grades every target note. Practice adds speed and an A–B loop
  * and never scores.
  */
@@ -39,7 +38,7 @@ export function singScreen(app: App, route: Route): Screen {
   const melody = pack.melody;
   const map = new BeatMap(melody);
   const sections = buildSections(melody, pack.lyrics, pack.timing);
-  const song: Song = melodyToSong(melody, SONG.id, SONG.title, sections, map);
+  const song: Song = melodyToSong(melody, pack.song.id, pack.song.title, sections, map);
   const latency = app.latency();
   const fold = store.settings.foldOctaves;
   const timing: LyricTiming | null = pack.timing;
@@ -114,7 +113,7 @@ export function singScreen(app: App, route: Route): Screen {
         'div',
         { class: 'hud-title' },
         h('div', { class: 'row', style: 'gap:8px' }, h('button', { class: 'btn ghost small', onclick: () => leave(), 'aria-label': 'Back to home (Esc)' }, icon('back', 'kbd-icon'), 'Home'), statusChip),
-        h('div', { class: 'song-name' }, SONG.title),
+        h('div', { class: 'song-name' }, pack.song.title),
       ),
       practice
         ? h('div', { class: 'hud-stats' }, h('div', { class: 'hud-stat' }, h('span', { class: 'hud-label' }, 'You'), h('div', { class: 'you' }, youNote, youCents)))
@@ -185,6 +184,7 @@ export function singScreen(app: App, route: Route): Screen {
   // ---------- player ----------
   const p = new TrackPlayer(rt.engine, pack.instrumentalUrl, pack.referenceUrl, {
     referenceOffset: melody.referenceOffset,
+    referenceMode: pack.referenceKind === 'vocal' ? 'layer' : 'replace',
     onEnded: () => void onEnded(),
     onLoop: () => {
       targetAvailability.reset();
@@ -522,7 +522,7 @@ export function singScreen(app: App, route: Route): Screen {
     if (practice) {
       updatePlayUi();
       toast('End of song · R to go again');
-      store.setLastPosition(SONG.id, 0);
+      store.setLastPosition(pack.song.id, 0);
       return;
     }
     await finish();
@@ -556,8 +556,8 @@ export function singScreen(app: App, route: Route): Screen {
       mode: 'sing' as const,
       speed: 1,
     };
-    const { previousBest, isNewBest } = store.recordAttempt(SONG.id, { ...record });
-    store.setLastPosition(SONG.id, 0);
+    const { previousBest, isNewBest } = store.recordAttempt(pack.song.id, { ...record });
+    store.setLastPosition(pack.song.id, 0);
     const result: AttemptResult = {
       config: { ...config },
       song,
@@ -678,7 +678,7 @@ export function singScreen(app: App, route: Route): Screen {
     renderLyrics(t);
     if (!p.paused && nowMs - lastSaved > 5000) {
       lastSaved = nowMs;
-      store.setLastPosition(SONG.id, t);
+      store.setLastPosition(pack.song.id, t);
     }
   };
   raf = requestAnimationFrame(frame);
@@ -690,7 +690,7 @@ export function singScreen(app: App, route: Route): Screen {
       cancelAnimationFrame(raf);
       offFrame();
       offStore();
-      if (!p.paused && p.duration) store.setLastPosition(SONG.id, p.rawTime());
+      if (!p.paused && p.duration) store.setLastPosition(pack.song.id, p.rawTime());
       p.destroy();
       if (app.activePlayer === p) app.activePlayer = null;
       window.removeEventListener('keydown', onKey);

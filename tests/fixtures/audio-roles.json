@@ -1,0 +1,21 @@
+{
+ "comment": "File names and the role both audioRole (src/core/songpack.ts) and classify (tools/prepare_song.py) must give them.",
+ "cases": [
+  ["Love Yourself Instrumental.mp3", "instrumental"],
+  ["Love Yourself (Vocals Only).mp3", "vocal"],
+  ["Love Yourself Full.mp3", "mix"],
+  ["Old Town Road - Karaoke.mp3", "instrumental"],
+  ["Old Town Road with Vocals.mp3", "mix"],
+  ["instrumental.mp3", "instrumental"],
+  ["reference.mp3", "mix"],
+  ["vocal.wav", "vocal"],
+  ["vocals.mp3", "vocal"],
+  ["Song (No Vocals).m4a", "instrumental"],
+  ["Song without vocals.mp3", "instrumental"],
+  ["Song acapella.flac", "vocal"],
+  ["Song - Lead Vocal Stem.wav", "vocal"],
+  ["Song (Original Mix).mp3", "mix"],
+  ["Careful.mp3", null],
+  ["Piano Song.mp3", null]
+ ]
+}
