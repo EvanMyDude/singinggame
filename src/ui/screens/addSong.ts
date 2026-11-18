@@ -38,6 +38,8 @@ export function addSongScreen(app: App, route: Route): Screen {
   let run: AnalysisRun | null = null;
   let result: { doc: MelodyDoc; report: AnalysisReport } | null = null;
   let destroyed = false;
+  /** True from Make targets until the report (or an error): the files must not change meanwhile. */
+  let working = false;
 
   const titleIn = h('input', { class: 'input', type: 'text', placeholder: 'Song title', 'aria-label': 'Song title', maxlength: 120 });
   const artistIn = h('input', { class: 'input', type: 'text', placeholder: 'Artist (optional)', 'aria-label': 'Artist', maxlength: 120 });
@@ -66,6 +68,7 @@ export function addSongScreen(app: App, route: Route): Screen {
   };
 
   const busy = (on: boolean) => {
+    working = on;
     for (const el of [titleIn, artistIn, lyricsIn, gateIn, analyzeBtn]) el.disabled = on;
     slotsHost.querySelectorAll('button').forEach((b) => (b.disabled = on || !!existing));
     cancelBtn.style.display = on ? '' : 'none';
@@ -119,6 +122,7 @@ export function addSongScreen(app: App, route: Route): Screen {
   };
 
   const handleDrop = async (list: FileList | File[]) => {
+    if (working) return say('warn', 'Wait for the analysis to finish, or cancel it, before changing the files.');
     const unknown: string[] = [];
     for (const f of [...list]) {
       if (/\.(txt|lrc)$/i.test(f.name) || f.type === 'text/plain') {
