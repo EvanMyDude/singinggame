@@ -78,6 +78,11 @@ The microphone only works on a secure origin: `http://localhost` during developm
   best and hardest phrase, sharp/flat timeline, note-by-note dots per part, accuracy trend;
   **Practice Weakest Part** opens Practice with that part looped.
 - **Pitch Monitor**: a free-running real-time pitch graph with note, Hz and cents readout.
+- **Record**: a toggle in Sing, Practice and the Pitch Monitor (off by default). It keeps your
+  voice and the music exactly as you heard it (speed, loops, reference vocal), lined up by
+  removing the same round-trip latency the scorer removes. **Recordings** on the home screen
+  plays a take back with your pitch trail over the target melody, sets the voice level, and
+  downloads the mix and the voice as 16-bit WAV. Takes stay in this browser.
 - **Settings**: microphone, sensitivity, headphones, mic monitoring, music volume, latency
   calibration, octave forgiveness, note names, song files, lyric sync.
 

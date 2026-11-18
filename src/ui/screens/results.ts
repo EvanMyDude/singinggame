@@ -26,6 +26,8 @@ export interface AttemptResult {
   notes: NoteResult[];
   previousBest: AttemptRecord | null;
   isNewBest: boolean;
+  /** The take recorded during this run, if recording was on. */
+  recordingId?: string;
 }
 
 const LABEL: Record<Judgment, string> = { perfect: 'Perfect', great: 'Great', good: 'Good', off: 'Off', miss: 'Missed' };
@@ -125,6 +127,7 @@ export function resultsScreen(app: App, route: Route): Screen {
       h('button', { class: 'btn primary big', onclick: tryAgain }, 'Sing Again'),
       weak ? h('button', { class: 'btn big', onclick: practiceWeak }, `Practice weakest scored part: ${weak.name}`) : null,
       h('button', { class: 'btn big', onclick: () => void app.startSession({ mode: 'practice' }) }, 'Practice'),
+      r.recordingId ? h('button', { class: 'btn big', onclick: () => app.go({ name: 'take', id: r.recordingId! }) }, 'Hear your recording') : null,
     ),
     h(
       'div',

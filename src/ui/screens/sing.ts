@@ -1,9 +1,11 @@
 import type { VoiceFrame } from '../../audio/pitch/tracker';
+import { SessionRecorder } from '../../audio/recorder';
 import { TrackPlayer } from '../../audio/trackPlayer';
 import { lineAt, wordAt, type LyricTiming } from '../../core/lyrics';
 import { BeatMap, buildSections, fmtTime, melodyToSong } from '../../core/melody';
 import { centsError, foldToOctaveOf, noteNameWithOctave } from '../../core/music';
 import { buildTimedLyricLines } from '../../core/phraseInsights';
+import { saveTake, type TakeMeta } from '../../core/recordings';
 import { ScoreEngine, THRESHOLDS, gradeFor, multiplierFor, zoneFor, type Judgment, type NoteResult, type Zone } from '../../core/scoring';
 import type { Note, Song } from '../../core/song';
 import { TargetAvailability } from '../../core/targetAvailability';
@@ -102,6 +104,13 @@ export function singScreen(app: App, route: Route): Screen {
     },
   });
   const finishBtn = h('button', { class: 'btn', onclick: () => void finish(), title: 'End the run now and see results' }, 'Finish');
+  const recLabel = h('span', null, 'Record');
+  const recBtn = h(
+    'button',
+    { class: 'btn toggle rec-btn', 'aria-pressed': 'false', onclick: () => void toggleRecording(), title: 'Record this session: your voice and the music you hear, saved in this browser' },
+    h('i', { class: 'rec-dot' }),
+    recLabel,
+  );
 
   const hud = h(
     'div',
@@ -139,7 +148,9 @@ export function singScreen(app: App, route: Route): Screen {
         restartBtn,
         refBtn,
         practice ? speedSeg : null,
-        practice ? h('div', { class: 'loop-controls' }, setABtn, setBBtn, loopBtn, clearBtn, loopLabel) : null,
+        // In Practice the Record button rides with the loop controls, so on a phone it shares
+        // the row Clear wraps onto instead of taking one of its own.
+        practice ? h('div', { class: 'loop-controls' }, setABtn, setBBtn, loopBtn, clearBtn, recBtn, loopLabel) : recBtn,
         h('div', { class: 'grow' }),
         h('div', { class: 'row vol', style: 'flex-wrap:nowrap' }, icon('speaker', 'kbd-icon'), volSlider, volVal),
         practice ? null : finishBtn,
@@ -174,6 +185,9 @@ export function singScreen(app: App, route: Route): Screen {
   let shownLine = -2;
   let wordSpans: HTMLElement[] = [];
   const targetAvailability = new TargetAvailability(melody.notes);
+  let recorder: SessionRecorder | null = null;
+  let recStarting = false;
+  const speedsUsed = new Set<number>([speed]);
 
   const toast = (text: string) => {
     const t = h('div', { class: 'toast' }, text);
@@ -258,6 +272,7 @@ export function singScreen(app: App, route: Route): Screen {
   const onFrame = (f: VoiceFrame) => {
     if (ended || p.paused || !p.clockReady) return;
     const songT = p.songTimeAt(f.time - latency);
+    recorder?.addFrame(f.time, songT, f.voiced ? f.displayMidi : NaN);
     if (!Number.isFinite(songT)) return;
     const beat = map.beat(songT);
     if (f.voiced) {
@@ -380,6 +395,7 @@ export function singScreen(app: App, route: Route): Screen {
 
   const setSpeed = (v: Speed) => {
     speed = v;
+    speedsUsed.add(v);
     p.setRate(v);
     store.updateSettings({ speed: v });
     speedSeg.querySelectorAll('button').forEach((b, i) => b.setAttribute('aria-pressed', String(SPEEDS[i] === v)));
@@ -517,6 +533,68 @@ export function singScreen(app: App, route: Route): Screen {
   };
   document.addEventListener('visibilitychange', onVis);
 
+  // ---------- recording ----------
+  const renderRec = () => {
+    const on = !!recorder;
+    recBtn.setAttribute('aria-pressed', String(on));
+    recBtn.classList.toggle('live', on && recorder!.recording);
+    recLabel.textContent = on ? `Rec ${fmtTime(recorder!.activeSeconds)}` : 'Record';
+  };
+
+  const toggleRecording = async () => {
+    if (recStarting || ended) return;
+    if (recorder) {
+      void stopRecording();
+      return;
+    }
+    recStarting = true;
+    try {
+      recorder = await SessionRecorder.create(rt, {
+        latency,
+        music: p.output,
+        onLimit: () => {
+          toast('Recording stopped at 20 minutes');
+          void stopRecording();
+        },
+      });
+      speedsUsed.clear();
+      speedsUsed.add(speed);
+      recorder.setActive(!p.paused);
+      toast(p.paused ? 'Recording starts when the song plays' : 'Recording');
+    } catch (e) {
+      recorder = null;
+      toast(`Could not start recording: ${(e as Error).message}`);
+    } finally {
+      recStarting = false;
+      renderRec();
+    }
+  };
+
+  /** Ends the take and saves it; resolves with its description, or null when nothing was kept. */
+  const stopRecording = async (result?: TakeMeta['result']): Promise<TakeMeta | null> => {
+    const r = recorder;
+    if (!r) return null;
+    recorder = null;
+    renderRec();
+    const take = await r.stop();
+    if (!take || take.duration < 0.5) return null;
+    try {
+      const meta = await saveTake(take, {
+        mode: practice ? 'practice' : 'sing',
+        songId: pack.song.id,
+        songTitle: pack.song.title,
+        latency,
+        speeds: [...speedsUsed].sort((a, b) => a - b),
+        ...(result ? { result } : {}),
+      });
+      if (!ended) toast('Recording saved · Home → Recordings');
+      return meta;
+    } catch (e) {
+      if (!ended) toast(`Could not save the recording: ${(e as Error).message}`);
+      return null;
+    }
+  };
+
   // ---------- finish ----------
   const onEnded = async () => {
     if (practice) {
@@ -558,6 +636,8 @@ export function singScreen(app: App, route: Route): Screen {
     };
     const { previousBest, isNewBest } = store.recordAttempt(pack.song.id, { ...record });
     store.setLastPosition(pack.song.id, 0);
+    if (recorder) toast('Saving the recording…');
+    const take = recorder ? await stopRecording({ score: record.score, accuracy: Math.round(accuracy), grade }) : null;
     const result: AttemptResult = {
       config: { ...config },
       song,
@@ -574,6 +654,7 @@ export function singScreen(app: App, route: Route): Screen {
       notes: [...sc.results].sort((a, b) => a.index - b.index),
       previousBest,
       isNewBest,
+      ...(take ? { recordingId: take.id } : {}),
     };
     toast('Song complete');
     setTimeout(() => app.go({ name: 'results', result }), 700);
@@ -631,6 +712,7 @@ export function singScreen(app: App, route: Route): Screen {
 
   // ---------- render loop ----------
   let raf = 0;
+  let lastRecUi = 0;
   let lastFrameT = performance.now();
   const frame = () => {
     raf = requestAnimationFrame(frame);
@@ -640,6 +722,13 @@ export function singScreen(app: App, route: Route): Screen {
     const t = p.time;
     const beat = map.beat(t);
     updateTargetStatus(t);
+    if (recorder) {
+      recorder.setActive(!p.paused && !ended);
+      if (nowMs - lastRecUi > 250) {
+        lastRecUi = nowMs;
+        renderRec();
+      }
+    }
     if (!practice && !scorer && !p.paused && p.clockReady) newScorer();
 
     const headOut = head && nowMs - head.t < 140 ? { m: head.m, zone: head.zone } : null;
@@ -687,6 +776,7 @@ export function singScreen(app: App, route: Route): Screen {
     el: root,
     destroy: () => {
       ended = true;
+      if (recorder) void stopRecording();
       cancelAnimationFrame(raf);
       offFrame();
       offStore();

@@ -138,6 +138,16 @@ export function icon(name: keyof typeof ICONS, cls = 'icon'): SVGSVGElement {
   return svg(ICONS[name], cls);
 }
 
+/** Saves a file through the browser's download. */
+export function downloadBlob(name: string, blob: Blob): void {
+  const url = URL.createObjectURL(blob);
+  const a = h('a', { href: url, download: name });
+  document.body.append(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 30_000);
+}
+
 export function fmtInt(n: number): string {
   return Math.round(n).toLocaleString('en-US');
 }

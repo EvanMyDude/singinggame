@@ -157,7 +157,7 @@ export function settingsScreen(app: App): Screen {
         lyricStatus,
         h('div', { class: 'divider', style: 'margin:14px 0' }),
         h('div', { class: 'panel-title' }, 'Data'),
-        h('p', { class: 'muted small', style: 'margin-top:0' }, 'Settings, latency, scores, song files and added songs are stored only in this browser. Nothing is sent anywhere.'),
+        h('p', { class: 'muted small', style: 'margin-top:0' }, 'Settings, latency, scores, song files, added songs and recordings are stored only in this browser. Nothing is sent anywhere.'),
         h(
           'button',
           {

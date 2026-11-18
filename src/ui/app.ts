@@ -26,7 +26,10 @@ export type Route =
   | { name: 'settings' }
   | { name: 'sync' }
   /** Add a song from its stems, or (with `songId`) analyze a browser song's stems again. */
-  | { name: 'addSong'; songId?: string };
+  | { name: 'addSong'; songId?: string }
+  | { name: 'recordings' }
+  /** Review one recorded take. */
+  | { name: 'take'; id: string };
 
 export interface Screen {
   el: HTMLElement;

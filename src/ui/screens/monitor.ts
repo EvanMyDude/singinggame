@@ -1,4 +1,7 @@
 import type { VoiceFrame } from '../../audio/pitch/tracker';
+import { SessionRecorder } from '../../audio/recorder';
+import { fmtTime } from '../../core/melody';
+import { saveTake } from '../../core/recordings';
 import { midiToHz, noteNameWithOctave } from '../../core/music';
 import { zoneFor } from '../../core/scoring';
 import type { App, Screen } from '../app';
@@ -21,6 +24,10 @@ export function monitorScreen(app: App): Screen {
 
   const startBtn = h('button', { class: 'btn primary', onclick: () => void toggleRun() }, 'Start');
   const holdBtn = h('button', { class: 'btn', 'aria-pressed': 'false', onclick: () => toggleHold(), disabled: true }, 'Hold');
+  const recLabel = h('span', null, 'Record');
+  const recBtn = h('button', { class: 'btn toggle rec-btn', 'aria-pressed': 'false', disabled: true, onclick: () => void toggleRec(), title: 'Record your voice; saved in this browser' }, h('i', { class: 'rec-dot' }), recLabel);
+  const recNote = h('span', { class: 'faint small' });
+  let recorder: SessionRecorder | null = null;
   const sensVal = h('span', { class: 'val' }, String(sensitivityFromGate(app.store.settings.gateDb)));
 
   const setView = (v: typeof graph.view, manual: boolean) => {
@@ -38,6 +45,7 @@ export function monitorScreen(app: App): Screen {
 
   const onFrame = (f: VoiceFrame) => {
     if (held) return;
+    recorder?.addFrame(f.time, NaN, f.voiced ? f.displayMidi : NaN);
     graph.push(f.time, f.voiced ? f.displayMidi : NaN);
     if (f.voiced) {
       current = f.displayMidi;
@@ -78,10 +86,43 @@ export function monitorScreen(app: App): Screen {
     holdBtn.disabled = false;
     holdBtn.textContent = 'Hold';
     holdBtn.setAttribute('aria-pressed', 'false');
+    recBtn.disabled = false;
+  };
+
+  const renderRec = () => {
+    recBtn.setAttribute('aria-pressed', String(!!recorder));
+    recBtn.classList.toggle('live', !!recorder?.recording);
+    recLabel.textContent = recorder ? `Rec ${fmtTime(recorder.activeSeconds)}` : 'Record';
+  };
+
+  const toggleRec = async () => {
+    if (recorder) return void stopRec();
+    if (!running) return;
+    recorder = await SessionRecorder.create(app.rt(), { latency: 0, music: null, onLimit: () => void stopRec() });
+    recorder.setActive(running && !held);
+    recNote.textContent = '';
+    renderRec();
+  };
+
+  const stopRec = async () => {
+    const r = recorder;
+    if (!r) return;
+    recorder = null;
+    renderRec();
+    const take = await r.stop();
+    if (!take || take.duration < 0.5) return;
+    try {
+      await saveTake(take, { mode: 'monitor', songId: null, songTitle: null, latency: 0, speeds: [] });
+      recNote.textContent = 'Saved · Home → Recordings';
+    } catch (e) {
+      recNote.textContent = `Could not save the recording: ${(e as Error).message}`;
+    }
   };
 
   /** Stop listening and release the microphone (the browser's mic indicator turns off). */
   const stop = () => {
+    void stopRec();
+    recBtn.disabled = true;
     off?.();
     off = null;
     running = false;
@@ -123,6 +164,10 @@ export function monitorScreen(app: App): Screen {
       noteEl.style.opacity = '0.45';
     } else noteEl.style.opacity = '1';
     graph.draw(held ? heldAt : nowCtx(), held ? null : current);
+    if (recorder) {
+      recorder.setActive(running && !held);
+      renderRec();
+    }
   };
   raf = requestAnimationFrame(loop);
 
@@ -143,7 +188,7 @@ export function monitorScreen(app: App): Screen {
       h(
         'div',
         { class: 'monitor-controls' },
-        h('div', { class: 'row' }, startBtn, holdBtn, btn('Clear', 'Clear graph', () => graph.clear())),
+        h('div', { class: 'row' }, startBtn, holdBtn, recBtn, btn('Clear', 'Clear graph', () => graph.clear()), recNote),
         h(
           'div',
           { class: 'row' },
@@ -193,6 +238,7 @@ export function monitorScreen(app: App): Screen {
   return {
     el,
     destroy: () => {
+      void stopRec();
       cancelAnimationFrame(raf);
       off?.();
     },

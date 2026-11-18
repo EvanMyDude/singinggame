@@ -125,6 +125,26 @@ async function localBlob(song: SongDef, spec: PackFileSpec): Promise<Blob | null
   }
 }
 
+/** A song's target melody alone (to review a recording), from the project folder or this browser. */
+export async function loadMelody(song: SongDef): Promise<MelodyData | null> {
+  const spec = packFiles(song).find((s) => s.key === 'melody')!;
+  const texts: string[] = [];
+  if (song.origin !== 'local') {
+    const st = await fetchStaticText(songFileUrl(baseUrl(), song.id, spec.name));
+    if (st !== null) texts.push(st);
+  }
+  const blob = await localBlob(song, spec);
+  if (blob) texts.push(await blob.text());
+  for (const t of texts) {
+    try {
+      return parseMelody(JSON.parse(t));
+    } catch {
+      /* try the next copy */
+    }
+  }
+  return null;
+}
+
 async function loadPackUncached(song: SongDef): Promise<PackStatus> {
   const sources: Record<PackFileKey, FileSource> = { instrumental: 'missing', reference: 'missing', melody: 'missing', lyrics: 'missing', timing: 'missing' };
   const errors: string[] = [];

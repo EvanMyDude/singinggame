@@ -179,6 +179,29 @@ scope per D5.
 
 ### Phase 2. Record and download sessions
 
+**Status (2026-11-18): built; the clap test needs a real microphone and speakers or
+headphones.** What was verified:
+
+- Assembly (`src/core/take.ts`, unit tests): a clap heard at T and captured at T + latency
+  lands on the same sample as the music click (within 1 sample, gate 1 ms); paused stretches
+  leave nothing in the take; a gap in capture becomes silence instead of shifting what
+  follows; voice frames land on the take timeline with the song time they answered.
+- In Chromium on the production build, with a WAV fed in as the microphone: a Sing take is
+  saved and offered on the results screen; at three points of the take, the recorded music
+  is the instrumental at the song time the scorer assigned, within 0.2 to 2.9 ms across runs
+  (the song clock's own jitter); a 50 % Practice take with an A–B loop records song time
+  advancing at 0.50 per second with both loop jumps, exactly as heard; a Pitch Monitor take
+  is microphone only; the review page replays the trail over the target highway; the mix
+  and voice download as valid 16-bit WAV; delete works; no page errors.
+- iPhone (D5): at iPhone size the Sing and Practice transport rows have the same height as
+  on `main` and nothing overflows; in Practice the Record button shares the row with the loop
+  controls.
+
+Open: the clap test (claps on the beat in Sing, with calibrated latency, line up with the
+instrumental's beat within 20 ms in the downloaded mix) needs a real microphone, and the
+downloads have not been checked in Firefox, Safari or on an iPhone. A take keeps about
+5.3 MB per minute per mono stream at 44.1 kHz; one take is capped at 20 minutes.
+
 **Goal.** Any session (Sing, Practice, Pitch Monitor, later the speaking drills) can be
 recorded, replayed with its pitch trail and downloaded. Nothing leaves the device unless the
 user downloads or shares it.

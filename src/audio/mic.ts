@@ -34,11 +34,55 @@ class PitchlineCapture extends AudioWorkletProcessor {
   }
 }
 registerProcessor('pitchline-capture', PitchlineCapture);
+
+// Session recording: every channel of what is played, in chunks stamped like the mic's. When
+// the input stops (nothing connected or nothing playing), the partial chunk is sent so the next
+// one starts with a fresh stamp and the timeline stays exact.
+class PitchheroTap extends AudioWorkletProcessor {
+  constructor() {
+    super();
+    this.size = 2048;
+    this.bufs = null;
+    this.n = 0;
+    this.start = 0;
+  }
+  flush() {
+    if (this.n && this.bufs) {
+      const out = this.bufs.map((b) => b.slice(0, this.n));
+      this.port.postMessage({ t: this.start, d: out }, out.map((b) => b.buffer));
+    }
+    this.n = 0;
+  }
+  process(inputs) {
+    const input = inputs[0];
+    if (!input || !input.length) {
+      this.flush();
+      return true;
+    }
+    if (!this.bufs || this.bufs.length !== input.length) {
+      this.flush();
+      this.bufs = input.map(() => new Float32Array(this.size));
+    }
+    const len = input[0].length;
+    for (let i = 0; i < len; i++) {
+      if (this.n === 0) this.start = currentTime + i / sampleRate;
+      for (let c = 0; c < input.length; c++) this.bufs[c][this.n] = input[c][i];
+      if (++this.n === this.size) {
+        this.port.postMessage({ t: this.start, d: this.bufs }, this.bufs.map((b) => b.buffer));
+        this.bufs = input.map(() => new Float32Array(this.size));
+        this.n = 0;
+      }
+    }
+    return true;
+  }
+}
+registerProcessor('pitchhero-tap', PitchheroTap);
 `;
 
 const workletLoaded = new WeakMap<BaseAudioContext, Promise<boolean>>();
 
-function loadWorklet(ctx: AudioContext): Promise<boolean> {
+/** Registers the capture processors on `ctx` once; false when AudioWorklet is unavailable. */
+export function loadWorklet(ctx: AudioContext): Promise<boolean> {
   let p = workletLoaded.get(ctx);
   if (!p) {
     p = (async () => {

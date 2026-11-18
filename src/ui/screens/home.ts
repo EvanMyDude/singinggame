@@ -115,6 +115,7 @@ export function homeScreen(app: App): Screen {
       modeCard('practice', 'Practice', 'Slow the track to 75 % or 50 % with pitch preserved, loop a hard section, keep the live pitch feedback. No score.', () => void app.startSession({ mode: 'practice' }), true),
       modeCard('sing', 'Sing', 'The full song over the instrumental with live pitch scoring and a results breakdown at the end.', () => void app.startSession({ mode: 'sing' })),
       modeCard('settings', 'Settings', 'Microphone, headphones, latency calibration, music volume, song files and lyric sync.', () => app.go({ name: 'settings' }), true),
+      modeCard('mic', 'Recordings', 'Takes recorded in Sing, Practice or the Pitch Monitor: hear them with your pitch over the targets, download WAV.', () => app.go({ name: 'recordings' })),
     ),
     h(
       'p',
@@ -131,7 +132,7 @@ export function homeScreen(app: App): Screen {
   return { el, destroy: wave.stop };
 }
 
-function modeCard(ic: 'sing' | 'practice' | 'warmup' | 'settings', title: string, text: string, onclick: () => void, alt = false): HTMLElement {
+function modeCard(ic: 'sing' | 'practice' | 'warmup' | 'settings' | 'mic', title: string, text: string, onclick: () => void, alt = false): HTMLElement {
   return h('button', { class: `mode-card ${alt ? 'alt' : ''}`, onclick }, icon(ic), h('h3', null, title), h('span', { class: 'muted small' }, text));
 }
 

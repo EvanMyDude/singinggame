@@ -2,7 +2,7 @@ import { deleteLocalSong, songPackage } from '../../core/localSongs';
 import { forgetPack } from '../../core/songpack';
 import type { SongDef } from '../../core/songs';
 import type { App } from '../app';
-import { h } from '../dom';
+import { downloadBlob, h } from '../dom';
 
 /**
  * Settings card for a song added in this browser: make its targets again, download the
@@ -19,12 +19,7 @@ export function localSongCard(app: App, song: SongDef): HTMLElement {
   const download = async () => {
     try {
       const pkg = await songPackage(song);
-      const url = URL.createObjectURL(pkg.blob);
-      const a = h('a', { href: url, download: pkg.name });
-      document.body.append(a);
-      a.click();
-      a.remove();
-      setTimeout(() => URL.revokeObjectURL(url), 10_000);
+      downloadBlob(pkg.name, pkg.blob);
       say(
         'good',
         `Downloaded ${pkg.name} (${pkg.files.map((f) => f.split('/')[1]).join(', ')}). To add the song to the project: unzip it into public/songs/, add "${song.id}" to public/songs/index.json, and put the audio files next to them under the names in song.json (they stay git-ignored).`,

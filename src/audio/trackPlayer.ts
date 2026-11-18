@@ -117,6 +117,11 @@ export class TrackPlayer {
     return this.ref ? [this.inst.el, this.ref.el] : [this.inst.el];
   }
 
+  /** The node carrying everything this player sounds, after the music volume (for recording). */
+  get output(): AudioNode {
+    return this.master;
+  }
+
   get duration(): number {
     const d = this.inst.el.duration;
     return Number.isFinite(d) ? d : 0;

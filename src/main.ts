@@ -6,6 +6,7 @@ import { addSongScreen } from './ui/screens/addSong';
 import { homeScreen } from './ui/screens/home';
 import { latencyScreen } from './ui/screens/latency';
 import { monitorScreen } from './ui/screens/monitor';
+import { recordingsScreen, takeScreen } from './ui/screens/recordings';
 import { resultsScreen } from './ui/screens/results';
 import { settingsScreen } from './ui/screens/settings';
 import { setupScreen } from './ui/screens/setup';
@@ -25,6 +26,8 @@ app.register('monitor', monitorScreen);
 app.register('settings', settingsScreen);
 app.register('sync', syncScreen);
 app.register('addSong', addSongScreen);
+app.register('recordings', recordingsScreen);
+app.register('take', takeScreen);
 void app.loadPack();
 app.go({ name: 'home' });
 
