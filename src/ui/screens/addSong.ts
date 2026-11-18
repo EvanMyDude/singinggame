@@ -71,6 +71,13 @@ export function addSongScreen(app: App, route: Route): Screen {
     progress.style.display = on ? '' : 'none';
   };
 
+  /** Any change of input makes a shown report stale: drop it and make analysis the next step again. */
+  const clearResult = () => {
+    result = null;
+    reportHost.replaceChildren();
+    analyzeBtn.className = 'btn primary big';
+  };
+
   const setFile = (slot: Slot, f: File) => {
     if (!(f.type.startsWith('audio/') || AUDIO.test(f.name))) {
       say('bad', `${f.name} is not an audio file.`);
@@ -79,9 +86,7 @@ export function addSongScreen(app: App, route: Route): Screen {
     files[slot] = f;
     names[slot] = f.name;
     if (!titleIn.value.trim()) titleIn.value = titleFromFileName(f.name);
-    result = null;
-    reportHost.replaceChildren();
-    analyzeBtn.className = 'btn primary big';
+    clearResult();
     renderSlots();
   };
 
@@ -110,7 +115,7 @@ export function addSongScreen(app: App, route: Route): Screen {
           existing ? null : h('button', { class: 'btn small', onclick: () => input.click() }, f ? 'Replace' : 'Choose'),
           existing || !f || s.required
             ? null
-            : h('button', { class: 'btn ghost small', onclick: () => { files[s.key] = null; names[s.key] = ''; renderSlots(); } }, 'Remove'),
+            : h('button', { class: 'btn ghost small', onclick: () => { files[s.key] = null; names[s.key] = ''; clearResult(); renderSlots(); } }, 'Remove'),
           input,
         );
       }),
@@ -201,9 +206,7 @@ export function addSongScreen(app: App, route: Route): Screen {
     if (!files.instrumental || !files.vocal) return say('bad', 'The instrumental and the isolated vocal are both needed.');
     const gate = Number(gateIn.value);
     if (!(gate >= 10 && gate <= 60)) return say('bad', 'The level gate must be between 10 and 60 dB.');
-    result = null;
-    reportHost.replaceChildren();
-    analyzeBtn.className = 'btn primary big';
+    clearResult();
     busy(true);
     const setProgress = (stage: string, f: number) => {
       progressFill.style.width = `${Math.round(f * 100)}%`;
