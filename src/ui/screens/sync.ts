@@ -3,7 +3,7 @@ import { emptyTiming, fillEnds, snapToOnset, timingComplete, timingFromPhrases, 
 import { fmtTime, vocalOnsets } from '../../core/melody';
 import { saveLyricsLocal, saveTimingLocal } from '../../core/songpack';
 import type { App, Screen } from '../app';
-import { backButton, h, icon, segmented, toggle } from '../dom';
+import { backButton, downloadBlob, h, icon, segmented, toggle } from '../dom';
 
 /**
  * Lyric sync: play the reference vocal and tap once per line; taps snap to the nearest
@@ -191,10 +191,7 @@ export function syncScreen(app: App): Screen {
     } catch (e) {
       status(`Could not save in this browser: ${(e as Error).message}`, 'bad');
     }
-    const a = h('a', { href: URL.createObjectURL(new Blob([json], { type: 'application/json' })), download: pack.song.files.timing });
-    document.body.append(a);
-    a.click();
-    a.remove();
+    downloadBlob(pack.song.files.timing, new Blob([json], { type: 'application/json' }));
   };
 
   const renderList = () => {

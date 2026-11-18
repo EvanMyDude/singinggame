@@ -1,6 +1,7 @@
 import { audioRole, classifyFile, importFile, packFiles, removeLocal, type PackFileKey, type PackStatus } from '../../core/songpack';
 import type { App } from '../app';
 import { h, icon } from '../dom';
+import { fileDropZone, fileSlotRow, missingChip } from './fileSlots';
 
 /**
  * "Song files" card: shows where each file of the current song comes from and lets the user
@@ -55,73 +56,33 @@ export function packFilesCard(app: App, onChange: () => void, opts: { compact?: 
     const rows = packFiles(status.song).map((spec) => {
       const key = spec.key;
       const src = status.sources[key];
-      const input = h('input', {
-        type: 'file',
-        style: 'display:none',
+      return fileSlotRow({
+        label: spec.label,
+        desc: opts.compact ? null : `${spec.name} · ${spec.hint}`,
+        state:
+          src === 'static'
+            ? h('span', { class: 'chip ok' }, h('i', { class: 'dot' }), 'in project folder')
+            : src === 'local'
+              ? h('span', { class: 'chip ok' }, h('i', { class: 'dot' }), 'saved in this browser')
+              : missingChip(spec.required),
         accept: spec.kind === 'audio' ? 'audio/*,.mp3,.m4a,.wav' : spec.kind === 'json' ? '.json,application/json' : '.txt,.lrc,text/plain',
-        onchange: () => {
-          const f = input.files?.[0];
-          input.value = '';
-          if (f) void pickFor(status, key, f);
-        },
-      });
-      const state =
-        src === 'static'
-          ? h('span', { class: 'chip ok' }, h('i', { class: 'dot' }), 'in project folder')
-          : src === 'local'
-            ? h('span', { class: 'chip ok' }, h('i', { class: 'dot' }), 'saved in this browser')
-            : h('span', { class: `chip ${spec.required ? 'warn' : ''}` }, h('i', { class: 'dot' }), spec.required ? 'missing (required)' : 'missing (optional)');
-      return h(
-        'div',
-        { class: 'pack-row' },
-        h('div', { class: 'grow' }, h('div', null, spec.label), opts.compact ? null : h('div', { class: 'desc' }, `${spec.name} · ${spec.hint}`)),
-        state,
-        h('button', { class: 'btn small', onclick: () => input.click() }, src === 'missing' ? 'Choose' : 'Replace'),
-        src === 'local'
-          ? h(
-              'button',
-              {
-                class: 'btn ghost small',
-                onclick: async () => {
-                  await removeLocal(status.song, key);
-                  await refresh();
-                },
+        filled: src !== 'missing',
+        onPick: (f) => void pickFor(status, key, f),
+        ...(src === 'local'
+          ? {
+              onRemove: async () => {
+                await removeLocal(status.song, key);
+                await refresh();
               },
-              'Remove',
-            )
-          : null,
-        input,
-      );
+            }
+          : {}),
+      });
     });
-    const multi = h('input', {
-      type: 'file',
-      multiple: true,
-      style: 'display:none',
-      onchange: () => {
-        if (multi.files?.length) void handleFiles(status, multi.files);
-        multi.value = '';
-      },
+    const drop = fileDropZone({
+      hint: status.song.referenceKind === 'vocal' ? 'Sorted by name: "karaoke" or "instrumental" → instrumental, "vocals only" or "acapella" → reference, .txt → lyrics.' : 'Sorted by name: "karaoke" or "instrumental" → instrumental, "full" or "with vocals" → reference, .txt → lyrics.',
+      onFiles: (files) => void handleFiles(status, files),
     });
-    const drop = h(
-      'div',
-      {
-        class: 'dropzone',
-        ondragover: (e: DragEvent) => {
-          e.preventDefault();
-          drop.classList.add('over');
-        },
-        ondragleave: () => drop.classList.remove('over'),
-        ondrop: (e: DragEvent) => {
-          e.preventDefault();
-          drop.classList.remove('over');
-          if (e.dataTransfer?.files.length) void handleFiles(status, e.dataTransfer.files);
-        },
-      },
-      h('span', null, 'Drop the song files here, or '),
-      h('button', { class: 'btn small', onclick: () => multi.click() }, 'choose files'),
-      h('span', { class: 'faint tiny', style: 'display:block;margin-top:6px' }, status.song.referenceKind === 'vocal' ? 'Sorted by name: "karaoke" or "instrumental" → instrumental, "vocals only" or "acapella" → reference, .txt → lyrics.' : 'Sorted by name: "karaoke" or "instrumental" → instrumental, "full" or "with vocals" → reference, .txt → lyrics.'),
-    );
-    body.replaceChildren(...rows, drop, multi);
+    body.replaceChildren(...rows, drop);
     if (status.errors.length) say('warn', status.errors.join(' · '));
   };
 

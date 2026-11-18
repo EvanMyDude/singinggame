@@ -6,6 +6,7 @@ import { noteNameWithOctave } from '../../core/music';
 import { audioRole, forgetPack, titleFromFileName } from '../../core/songpack';
 import { songIdFor } from '../../core/songs';
 import type { App, Route, Screen } from '../app';
+import { fileDropZone, fileSlotRow, missingChip } from '../components/fileSlots';
 import { backButton, h, icon } from '../dom';
 
 /**
@@ -93,31 +94,26 @@ export function addSongScreen(app: App, route: Route): Screen {
   const renderSlots = () => {
     slotsHost.replaceChildren(
       ...SLOTS.map((s) => {
-        const input = h('input', {
-          type: 'file',
-          accept: 'audio/*,.mp3,.m4a,.wav,.ogg,.aac,.flac',
-          style: 'display:none',
-          onchange: () => {
-            const f = input.files?.[0];
-            input.value = '';
-            if (f) setFile(s.key, f);
-          },
-        });
         const f = files[s.key];
-        const state = f
-          ? h('span', { class: 'chip ok' }, h('i', { class: 'dot' }), `${names[s.key]} · ${fmtSize(f.size)}`)
-          : h('span', { class: `chip ${s.required ? 'warn' : ''}` }, h('i', { class: 'dot' }), s.required ? 'missing (required)' : 'missing (optional)');
-        return h(
-          'div',
-          { class: 'pack-row' },
-          h('div', { class: 'grow' }, h('div', null, s.label), h('div', { class: 'desc' }, s.hint)),
-          state,
-          existing ? null : h('button', { class: 'btn small', onclick: () => input.click() }, f ? 'Replace' : 'Choose'),
-          existing || !f || s.required
-            ? null
-            : h('button', { class: 'btn ghost small', onclick: () => { files[s.key] = null; names[s.key] = ''; clearResult(); renderSlots(); } }, 'Remove'),
-          input,
-        );
+        return fileSlotRow({
+          label: s.label,
+          desc: s.hint,
+          state: f ? h('span', { class: 'chip ok' }, h('i', { class: 'dot' }), `${names[s.key]} · ${fmtSize(f.size)}`) : missingChip(s.required),
+          // Analyzing again uses the stored files: nothing to pick.
+          accept: existing ? null : 'audio/*,.mp3,.m4a,.wav,.ogg,.aac,.flac',
+          filled: !!f,
+          onPick: (file) => setFile(s.key, file),
+          ...(existing || !f || s.required
+            ? {}
+            : {
+                onRemove: () => {
+                  files[s.key] = null;
+                  names[s.key] = '';
+                  clearResult();
+                  renderSlots();
+                },
+              }),
+        });
       }),
     );
   };
@@ -138,35 +134,10 @@ export function addSongScreen(app: App, route: Route): Screen {
     say(unknown.length ? 'warn' : '', unknown.length ? `Could not tell what ${unknown.join(', ')} is from its name. Use the Choose button next to the right slot.` : '');
   };
 
-  const multi = h('input', {
-    type: 'file',
-    multiple: true,
-    style: 'display:none',
-    onchange: () => {
-      if (multi.files?.length) void handleDrop(multi.files);
-      multi.value = '';
-    },
+  const drop = fileDropZone({
+    hint: 'Sorted by name: "instrumental" or "karaoke", "vocals only" or "acapella", "full" or "with vocals"; a .txt file fills the lyrics.',
+    onFiles: (list) => void handleDrop(list),
   });
-  const drop = h(
-    'div',
-    {
-      class: 'dropzone',
-      ondragover: (e: DragEvent) => {
-        e.preventDefault();
-        drop.classList.add('over');
-      },
-      ondragleave: () => drop.classList.remove('over'),
-      ondrop: (e: DragEvent) => {
-        e.preventDefault();
-        drop.classList.remove('over');
-        if (e.dataTransfer?.files.length) void handleDrop(e.dataTransfer.files);
-      },
-    },
-    h('span', null, 'Drop the song files here, or '),
-    h('button', { class: 'btn small', onclick: () => multi.click() }, 'choose files'),
-    h('span', { class: 'faint tiny', style: 'display:block;margin-top:6px' }, 'Sorted by name: "instrumental" or "karaoke", "vocals only" or "acapella", "full" or "with vocals"; a .txt file fills the lyrics.'),
-    multi,
-  );
 
   const renderReport = () => {
     if (!result) return;
