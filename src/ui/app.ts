@@ -1,8 +1,9 @@
 import { MicError } from '../audio/mic';
 import type { TrackPlayer } from '../audio/trackPlayer';
 import { getRuntime, hasRuntime, type VoiceRuntime } from '../audio/voice';
+import { listLocalSongs } from '../core/localSongs';
 import { loadPack, type PackStatus, type SongPack } from '../core/songpack';
-import { loadRegistry, type SongDef } from '../core/songs';
+import { loadRegistry, mergeSongLists, type SongDef } from '../core/songs';
 import { Store, markWarmupOffered, warmupOffered } from '../core/storage';
 import { clear } from './dom';
 
@@ -23,7 +24,9 @@ export type Route =
   | { name: 'results'; result: import('./screens/results').AttemptResult }
   | { name: 'monitor' }
   | { name: 'settings' }
-  | { name: 'sync' };
+  | { name: 'sync' }
+  /** Add a song from its stems, or (with `songId`) analyze a browser song's stems again. */
+  | { name: 'addSong'; songId?: string };
 
 export interface Screen {
   el: HTMLElement;
@@ -37,7 +40,10 @@ export class App {
   private readonly root: HTMLElement;
   private current: Screen | null = null;
   private readonly factories = new Map<Route['name'], ScreenFactory>();
-  /** The songs the app offers (songs/index.json); empty until the registry has loaded. */
+  /**
+   * The songs the app offers: songs/index.json, then songs added in this browser. Empty
+   * until the registry has loaded.
+   */
   songs: SongDef[] = [];
   /** Problems found while loading the registry. */
   registryErrors: string[] = [];
@@ -70,11 +76,19 @@ export class App {
 
   /** Loads the song list once. */
   loadRegistry(): Promise<void> {
-    this.registryPromise ??= loadRegistry().then((r) => {
-      this.songs = r.songs;
-      this.registryErrors = r.errors;
+    this.registryPromise ??= Promise.all([loadRegistry(), listLocalSongs()]).then(([project, local]) => {
+      this.songs = mergeSongLists(project.songs, local.songs);
+      this.registryErrors = [...project.errors, ...local.errors];
     });
     return this.registryPromise;
+  }
+
+  /** Loads the song list again after a song was added or removed in this browser. */
+  reloadRegistry(): Promise<void> {
+    this.registryPromise = null;
+    this.packStatus = null;
+    this.packPromise = null;
+    return this.loadRegistry();
   }
 
   /** The song being practiced: the one last chosen, else the first in the list. */

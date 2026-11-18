@@ -35,8 +35,10 @@ export function packFiles(song: SongDef): PackFileSpec[] {
         : { key: 'reference', name: f.reference, kind: 'audio', required: false, label: 'Reference track with vocals', hint: 'the full song; plays with Reference vocal on' },
     );
   }
+  const melodyHint =
+    song.origin === 'local' ? 'made in this browser by Add song' : `made by ${song.targetSource === 'mix-subtraction' ? 'tools/extract_melody.py' : 'npm run prepare-song'}; committed in the repo`;
   out.push(
-    { key: 'melody', name: f.melody, kind: 'json', required: true, label: 'Target melody (melody.json)', hint: `made by ${song.targetSource === 'mix-subtraction' ? 'tools/extract_melody.py' : 'npm run prepare-song'}; committed in the repo` },
+    { key: 'melody', name: f.melody, kind: 'json', required: true, label: 'Target melody (melody.json)', hint: melodyHint },
     { key: 'lyrics', name: f.lyrics, kind: 'text', required: false, label: 'Lyrics text (lyrics.txt)', hint: 'one lyric line per line; [Section] headers allowed' },
     { key: 'timing', name: f.timing, kind: 'json', required: false, label: 'Lyric timing (timing.json)', hint: 'made with Settings → Sync lyrics' },
   );
@@ -92,6 +94,17 @@ function blobUrl(songId: string, key: PackFileKey, blob: Blob): string {
 
 const cached = new Map<string, Promise<PackStatus>>();
 
+/** Forget a song's loaded files (after it was deleted or re-analyzed). */
+export function forgetPack(songId: string): void {
+  cached.delete(songId);
+  for (const [k, url] of objectUrls) {
+    if (k.startsWith(`${songId}/`)) {
+      URL.revokeObjectURL(url);
+      objectUrls.delete(k);
+    }
+  }
+}
+
 export function loadPack(song: SongDef, force = false): Promise<PackStatus> {
   let p = force ? undefined : cached.get(song.id);
   if (!p) {
@@ -117,13 +130,15 @@ async function loadPackUncached(song: SongDef): Promise<PackStatus> {
   const errors: string[] = [];
   const specs = new Map(packFiles(song).map((s) => [s.key, s]));
   const base = baseUrl();
+  // A song added in this browser has no project folder: asking the server would only 404.
+  const project = song.origin !== 'local';
 
   // Audio: static first (dev), then local.
   const audioUrl = async (key: 'instrumental' | 'reference'): Promise<string | null> => {
     const spec = specs.get(key);
     if (!spec) return null;
     const url = songFileUrl(base, song.id, spec.name);
-    if (await staticExists(url)) {
+    if (project && (await staticExists(url))) {
       sources[key] = 'static';
       return url;
     }
@@ -138,7 +153,7 @@ async function loadPackUncached(song: SongDef): Promise<PackStatus> {
   const textOf = async (key: 'melody' | 'lyrics' | 'timing'): Promise<{ text: string; source: FileSource }[]> => {
     const spec = specs.get(key)!;
     const out: { text: string; source: FileSource }[] = [];
-    const st = await fetchStaticText(songFileUrl(base, song.id, spec.name));
+    const st = project ? await fetchStaticText(songFileUrl(base, song.id, spec.name)) : null;
     if (st !== null) out.push({ text: st, source: 'static' });
     const blob = await localBlob(song, spec);
     if (blob) out.push({ text: await blob.text(), source: 'local' });
@@ -220,6 +235,21 @@ export function audioRole(fileName: string): 'instrumental' | 'vocal' | 'mix' | 
   if (/vocals?[ _-]?only|only[ _-]?vocals?|a[ _-]?cap+el+a|isolated|lead[ _-]?vocals?|vocal[ _-]?stem|^vocals?\b|\(vocals?\)/.test(stem)) return 'vocal';
   if (/\bfull\b|with[ _-]vocals?|original|\bmix\b|reference/.test(stem)) return 'mix';
   return null;
+}
+
+const AUDIO_NAME_I = /\.(mp3|m4a|wav|ogg|aac|flac)$/i;
+
+/** "Love Yourself (Vocals Only).mp3" -> "Love Yourself". */
+export function titleFromFileName(name: string): string {
+  return name
+    .replace(AUDIO_NAME_I, '')
+    .replace(/_+/g, ' ')
+    .replace(/[([{][^)\]}]*[)\]}]/g, ' ')
+    .replace(/\b(karaoke|instrumental|inst|backing|minus|no[ _-]?vocals?|without[ _-]vocals?|vocals?[ _-]?only|only[ _-]?vocals?|a[ _-]?cap+el+a|isolated|lead[ _-]?vocals?|vocal[ _-]?stem|vocals?|full[ _-]?mix|full|with[ _-]vocals?|original|mix|reference)\b/gi, ' ')
+    .replace(/\s*[-–—]\s*$/g, '')
+    .replace(/^\s*[-–—]\s*/g, '')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
 }
 
 /**

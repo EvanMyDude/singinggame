@@ -21,6 +21,21 @@ export function homeScreen(app: App): Screen {
     void app.loadPack().then(renderStatus);
   };
 
+  const addSongButton = h('button', { class: 'btn ghost small', onclick: () => app.go({ name: 'addSong' }), title: 'Add a song from its instrumental and isolated vocal' }, '+ Add song');
+
+  /** Segmented buttons for a few songs; a menu once they no longer fit on one line. */
+  const songPicker = (): HTMLElement | null => {
+    const song = app.song;
+    if (!song || app.songs.length < 2) return null;
+    if (app.songs.length <= 4) return segmented(app.songs.map((x) => ({ value: x.id, label: x.title })), song.id, choose, 'Song');
+    const sel = h(
+      'select',
+      { 'aria-label': 'Song', onchange: () => choose(sel.value) },
+      ...app.songs.map((x) => h('option', { value: x.id, selected: x.id === song.id }, x.artist ? `${x.title} · ${x.artist}` : x.title)),
+    );
+    return sel;
+  };
+
   /** Everything that depends on the current song: called again when the list or the files load. */
   const renderStatus = () => {
     const song = app.song;
@@ -28,11 +43,7 @@ export function homeScreen(app: App): Screen {
     const ready = !!ps?.pack;
     const best = song ? app.store.progress(song.id).best : null;
     const last = song ? app.store.lastPosition(song.id) : 0;
-    pickerHost.replaceChildren(
-      song && app.songs.length > 1
-        ? h('div', { class: 'row', style: 'margin-bottom:14px' }, segmented(app.songs.map((x) => ({ value: x.id, label: x.title })), song.id, choose, 'Song'))
-        : h('div'),
-    );
+    pickerHost.replaceChildren(h('div', { class: 'row song-picker', style: 'margin-bottom:14px' }, songPicker(), addSongButton));
     titleEl.textContent = song ? song.title : 'Pitch Hero';
     blurbEl.textContent = song
       ? `${song.artist ? `${song.artist} · ` : ''}karaoke instrumental with a live pitch monitor, synced lyrics, slow-down practice and A–B looping.`
@@ -50,6 +61,7 @@ export function homeScreen(app: App): Screen {
       h('span', { class: `chip ${s.latencyMs !== null ? 'ok' : ''}` }, h('i', { class: 'dot' }), latencyLabel),
       h('span', { class: `chip ${s.headphones ? 'accent' : 'warn'}` }, s.headphones ? 'Headphones' : 'Speakers'),
       ps?.pack && !ps.pack.lyrics ? h('span', { class: 'chip warn' }, 'No lyrics yet') : ps?.pack && !ps.pack.timing ? h('span', { class: 'chip warn' }, 'Lyrics not synced') : null,
+      song?.origin === 'local' ? h('span', { class: 'chip', title: 'Its files and targets are stored only in this browser' }, 'Added in this browser') : null,
       ].filter((x) => x !== null),
     );
     actions.replaceChildren(
@@ -62,7 +74,13 @@ export function homeScreen(app: App): Screen {
       ].filter((x) => x !== null),
     );
     filesHost.replaceChildren(ready || !ps ? h('div') : packFilesCard(app, renderStatus));
-    if (!ready && ps) filesHost.prepend(h('p', { class: 'muted', style: 'margin:18px 0 10px' }, `This site does not ship the song audio. Pick the MP3s (and lyrics.txt) for ${ps.song.title} once; they stay in this browser.`));
+    if (!ready && ps) {
+      const why =
+        ps.song.origin === 'local'
+          ? `Some files of ${ps.song.title} are missing from this browser. Pick them again below.`
+          : `This site does not ship the song audio. Pick the MP3s (and lyrics.txt) for ${ps.song.title} once; they stay in this browser.`;
+      filesHost.prepend(h('p', { class: 'muted', style: 'margin:18px 0 10px' }, why));
+    }
   };
 
   const el = h(

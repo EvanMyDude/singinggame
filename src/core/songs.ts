@@ -33,6 +33,11 @@ export interface SongDef {
   referenceKind: ReferenceKind;
   /** How melody.json was made, e.g. "isolated-vocal" or "mix-subtraction"; informational. */
   targetSource: string | null;
+  /**
+   * `local`: added in this browser with Add song; every file lives in IndexedDB
+   * (core/localSongs.ts). Absent for songs in public/songs/.
+   */
+  origin?: 'local';
 }
 
 const ID = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
@@ -90,6 +95,33 @@ export function parseRegistry(json: unknown): string[] {
     if (!out.includes(id)) out.push(id);
   }
   return out;
+}
+
+/**
+ * The songs the app offers: the project's songs in registry order, then songs added in this
+ * browser, oldest first. A browser song whose id is also a project song is hidden: once its
+ * exported definition is committed, the project copy is the song, and the audio stored in the
+ * browser under the same id keeps serving it.
+ */
+export function mergeSongLists(project: readonly SongDef[], local: readonly SongDef[]): SongDef[] {
+  const ids = new Set(project.map((s) => s.id));
+  return [...project, ...local.filter((s) => !ids.has(s.id))];
+}
+
+/** A song id made from a title: lowercase words joined by dashes, unique among `taken`. */
+export function songIdFor(title: string, taken: Iterable<string>): string {
+  const used = new Set(taken);
+  const base =
+    title
+      .normalize('NFKD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '')
+      .slice(0, 48)
+      .replace(/-+$/g, '') || 'song';
+  if (!used.has(base)) return base;
+  for (let i = 2; ; i++) if (!used.has(`${base}-${i}`)) return `${base}-${i}`;
 }
 
 /** URL of a file in a song folder. File names may contain spaces and punctuation. */

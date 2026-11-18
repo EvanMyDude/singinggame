@@ -1,6 +1,7 @@
 import { listMics } from '../../audio/mic';
 import type { Settings } from '../../core/storage';
 import type { App, Screen } from '../app';
+import { localSongCard } from '../components/localSongCard';
 import { packFilesCard } from '../components/packFiles';
 import { backButton, h, icon, slider, toggle } from '../dom';
 import { gateFromSensitivity, sensitivityFromGate } from './setup';
@@ -147,6 +148,7 @@ export function settingsScreen(app: App): Screen {
         row('Show note names', 'Label the pitch lanes while singing.', toggle('', s().showNoteNames, (v) => set({ showNoteNames: v }))),
       ),
       packFilesCard(app, renderLyricStatus),
+      app.song?.origin === 'local' ? localSongCard(app, app.song) : null,
       h(
         'div',
         { class: 'card' },
@@ -155,7 +157,7 @@ export function settingsScreen(app: App): Screen {
         lyricStatus,
         h('div', { class: 'divider', style: 'margin:14px 0' }),
         h('div', { class: 'panel-title' }, 'Data'),
-        h('p', { class: 'muted small', style: 'margin-top:0' }, 'Settings, latency, scores and song files are stored only in this browser. Nothing is sent anywhere.'),
+        h('p', { class: 'muted small', style: 'margin-top:0' }, 'Settings, latency, scores, song files and added songs are stored only in this browser. Nothing is sent anywhere.'),
         h(
           'button',
           {

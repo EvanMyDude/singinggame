@@ -66,6 +66,68 @@ files claim one role, name them: `--instrumental FILE --vocal FILE --mix FILE`.
 | `--check-only` | only check `lyrics.txt` and `timing.json`; write nothing |
 | `--no-register` | do not add the song to `index.json` |
 
+## Add a song in the browser
+
+**+ Add song** on the home screen does the same job without the command line, on desktop
+browsers (Chrome, Edge, Firefox, Safari):
+
+1. Drop or pick the instrumental and the isolated lead vocal, and the full mix if you have it.
+   Files are sorted into their slots by the same name rules as the command. A `.txt` file, or
+   text pasted into **Lyrics**, becomes the lyric text.
+2. **Make targets.** The browser decodes the files to mono at 22,050 Hz and runs the analysis
+   in a worker (`src/analysis/`), then shows the same report the command prints.
+3. **Save song.** The song joins the picker, after the project's songs. Its audio, lyrics,
+   timing and targets are stored in this browser's IndexedDB under the song id; nothing is
+   uploaded. Sync the lyrics in Settings → **Sync lyrics** as for any song.
+
+Settings shows an **Added in this browser** card for such a song: **Analyze again** (the
+stored stems, for example with another level gate under **Advanced**), **Download song
+package**, and **Delete song**.
+
+**Moving it into the project.** The package is a zip with `<id>/song.json`, `<id>/melody.json`
+and, once synced, `<id>/timing.json`: the files a project song commits. Unzip it into
+`public/songs/`, add the id to `public/songs/index.json`, put the audio next to them under the
+names in `song.json`, and commit the JSON. The project copy then takes over the id; the audio
+stored in the browser under that id keeps serving it there.
+
+### How the browser analysis relates to prepare-song
+
+`src/analysis/` ports `analyze()` of `tools/prepare_song.py`, `tools/vocal_targets.py` and
+`librosa.pyin` step by step: the same frame grid, alignment, level gate, note logic and
+rounding. `tests/analysis.test.ts` checks it against fixtures the Python code writes
+(`make analysis-fixtures`, which runs `tests/make_analysis_fixtures.py`): the notes and
+loss accounting on hand-built and randomized contours, and pYIN's voicing, pitch and
+probabilities frame by frame on a synthetic vocal. On a synthetic song decoded by the
+browser, the saved `melody.json` matched the command's in every field except these:
+
+| Field | Browser | prepare-song |
+| --- | --- | --- |
+| `source.tool` | `browser` | `tools/prepare_song.py` |
+| `bpm`, `firstBeat` | onset-envelope grid search, 70 to 150 BPM | librosa's beat tracker, folded into 70 to 150 |
+| `key` | from the target notes' pitch classes | from the instrumental's chroma |
+| `analysis.tempoKey` | `browser-estimate` | absent |
+
+Tempo and key do not affect scoring: the scorer converts its tolerances and frame times through
+the same seconds-per-beat. A wrong tempo moves the highway's bar lines and changes how fast it
+scrolls; the key only picks sharps or flats for note names on the results screen.
+
+**Checking a real song.** The synthetic checks say the port computes what the reference
+computes. To compare the two on a song's own recordings:
+
+```sh
+make parity SONG=love-yourself
+```
+
+`tools/decode_song.py` decodes the song folder's stems with the Python decoder into
+`work/parity/<id>/` (git-ignored), and `tests/browserParity.test.ts` runs the browser analysis
+on them and compares with the committed `melody.json`. It passes when the browser covers at
+least 95 % of the committed target seconds at the same note and the note count is within 5 %,
+and writes `parity-report.txt` and `browser-melody.json` beside the decoded audio. The
+committed file was made with whatever librosa version was installed at the time, which can
+account for small differences. MP3 decoders can also disagree by a few tens of milliseconds of
+encoder delay, so a song analyzed in the browser can sit slightly differently from one made by
+the command; it is consistent with the browser's own playback of the same file.
+
 ## The song definition
 
 `public/songs/<id>/song.json`:
@@ -109,7 +171,7 @@ files claim one role, name them: `--instrumental FILE --vocal FILE --mix FILE`.
 | --- | --- | --- |
 | audio (`*.mp3`, `*.m4a`, `*.wav`) | no | copyrighted recordings; the repository and the Pages site are public |
 | `lyrics.txt` | no | copyrighted text |
-| `song.json`, `melody.json`, `timing.json`, `index.json` | yes | small derived data; the browser never analyzes audio |
+| `song.json`, `melody.json`, `timing.json`, `index.json` | yes | small derived data; the app reads targets instead of analyzing a project song's audio |
 
 `.gitignore` already covers every song folder. Do not use Git LFS for the audio: LFS files in a
 public repository are as public as ordinary ones.

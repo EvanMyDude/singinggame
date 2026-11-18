@@ -12,5 +12,7 @@ public/songs/*/*.m4a
 public/songs/*/*.wav
 public/songs/*/lyrics.txt
 __pycache__/
+# Decoded audio for make parity (derived from the recordings).
+/work/
 .venv/
 *.pyc

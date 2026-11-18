@@ -191,6 +191,14 @@ export class Store {
     writeJSON(KEY, this.data); // frequent: skip listeners
   }
 
+  /** Drops a removed song's scores, resume position and selection. */
+  forgetSong(songId: string): void {
+    delete this.data.progress[songId];
+    delete this.data.lastPosition[songId];
+    if (this.data.currentSong === songId) delete this.data.currentSong;
+    this.save();
+  }
+
   resetAll(): void {
     this.data = emptySave();
     this.save();

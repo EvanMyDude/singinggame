@@ -2,6 +2,7 @@ import '@fontsource-variable/inter';
 import '@fontsource-variable/space-grotesk';
 import './styles.css';
 import { App } from './ui/app';
+import { addSongScreen } from './ui/screens/addSong';
 import { homeScreen } from './ui/screens/home';
 import { latencyScreen } from './ui/screens/latency';
 import { monitorScreen } from './ui/screens/monitor';
@@ -23,6 +24,7 @@ app.register('results', resultsScreen);
 app.register('monitor', monitorScreen);
 app.register('settings', settingsScreen);
 app.register('sync', syncScreen);
+app.register('addSong', addSongScreen);
 void app.loadPack();
 app.go({ name: 'home' });
 

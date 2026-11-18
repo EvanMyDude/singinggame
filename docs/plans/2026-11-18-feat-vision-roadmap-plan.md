@@ -1,7 +1,7 @@
 # Pitch Hero vision roadmap
 
-Status **proposed** (no code changed) · Date 2026-11-18 · Baseline `make check` green
-(typecheck clean, 126 tests pass, 1 skipped)
+Status **accepted**, decisions D1 to D5 resolved, Phase 1 in progress · Date 2026-11-18 ·
+Baseline `make check` green (typecheck clean, 126 tests pass, 1 skipped)
 
 ## The vision
 
@@ -101,6 +101,24 @@ smallest phase; it comes early because its recordings are the test corpus for Ph
 
 ### Phase 1. Add a song in the app from stems
 
+**Status (2026-11-18): built; the real-song gate is still open.** What was verified:
+
+- Note logic: identical notes, timing and loss accounting to `tools/vocal_targets.py` on 13
+  fixture contours, three of them 25 s randomized realistic contours.
+- pYIN: the same voicing and the same pitch bin as librosa 1.0.1 on every frame of the
+  synthetic vocal fixture, voicing probability within 1e-4.
+- Whole pipeline in Chromium on the production build: on a synthetic 44 s song decoded by the
+  browser, the saved `melody.json` matched `prepare_song.py`'s in every field except
+  `source.tool`, tempo and key (simplified by design). Add, save, reload, practice playback,
+  package download, analyze again and delete all worked, with no page errors.
+- iPhone (D5): the home screen at iPhone size matches `main` apart from the new button.
+- Speed: a four-minute song takes about 21 s in Node on the build container (alignment 8 s,
+  pitch tracking 10 s, tempo 2 s).
+
+Open: the real-song parity gate needs the audio, which is not in the repository. Run
+`make parity SONG=love-yourself` on the machine that has the stems. The opt-in
+`referenceVocal` check on a browser-made melody is also not yet run.
+
 **Goal.** On the deployed site, with no dev machine, the user drops an instrumental, an
 isolated vocal, an optional full mix and lyrics; the browser computes the targets; the song
 appears in the picker and works like a committed song (Sing, Practice, Sync, results).
@@ -152,9 +170,12 @@ appears in the picker and works like a committed song (Sing, Practice, Sync, res
   scored Sing run.
 - All existing tests pass and the committed songs load unchanged.
 
-**Risks.** pYIN port fidelity (gated by the fixtures); worker compute time on phones; a wrong
-file in a slot, such as a full mix in the vocal slot (caught by the ported report warnings).
-Memory is modest: three decoded four-minute tracks at 22,050 Hz are about 64 MB of float32.
+**Risks.** pYIN port fidelity (gated by the fixtures); a wrong file in a slot, such as a full
+mix in the vocal slot (caught by the ported report warnings); browser and librosa MP3 decoders
+can disagree by a few tens of milliseconds of encoder delay, which shifts targets slightly
+against Python's but consistently with the browser's own playback. Memory is modest: three
+decoded four-minute tracks at 22,050 Hz are about 64 MB of float32. Phone compute is out of
+scope per D5.
 
 ### Phase 2. Record and download sessions
 
@@ -198,6 +219,8 @@ user downloads or shares it.
 the durable copy. iOS download behavior needs a device check.
 
 ### Phase 3. One-file upload (source separation)
+
+Deferred per D1: songs arrive as separate files.
 
 **Question.** Do vocals separated by a current open model produce targets as good as the
 stems used for Love Yourself?
@@ -247,8 +270,8 @@ aligner. torchaudio 2.8 marked its alignment API for removal and the maintainers
 at most 0.2 s, at least 90 % within 0.5 s, no out-of-order lines. Kill criterion: if no
 candidate beats 4a on both songs, ship 4a with the Sync tool as the review step.
 
-**4c, integration.** A CLI-only winner means the in-app flow uses 4a and accepts an imported
-`timing.json` ([D3](#open-decisions)). A browser aligner (Whisper through transformers.js) is a
+**4c, integration.** Per D3 the first integration is the dev-machine command; the in-app flow
+uses 4a and accepts an imported `timing.json`. A browser aligner (Whisper through transformers.js) is a
 later candidate; its word-timestamp support on WebGPU has had open issues, so re-verify it then.
 
 ### Phase 5. Speaking drills: rhythm and rate
@@ -353,16 +376,24 @@ locally and sharing its table of contents would let a later session map specific
 
 ## Open decisions
 
+Resolved 2026-11-18. Each answer follows its question.
+
 - **D1. Song source.** Do you usually have an instrumental and an isolated vocal, or only the
-  full song? With stems, Phase 3 can wait indefinitely.
+  full song? *Separate files.* Phase 3 is deferred until a song arrives without stems.
 - **D2. Server processing.** May audio ever leave the browser (separation, alignment,
-  pronunciation scoring)? The home screen promises the microphone never leaves the device. A
-  no removes options 3(c) and 6(c).
+  pronunciation scoring)? *Yes, when that is the better workflow.* Options 3(c) and 6(c)
+  stay open; the home-screen promise about the microphone must change in the same release
+  that sends any audio off the device.
 - **D3. Where automatic timing runs.** Is a dev-machine command acceptable, or must it run in
-  the app?
-- **D4. Recording format.** Is WAV acceptable for the first version, given its size?
-- **D5. Devices.** Is Safari on iPhone a target? It affects downloads, storage eviction,
-  memory and WebGPU availability.
+  the app? *A command on the dev machine is fine, especially for the initial integration.*
+  Phase 4 ships as `tools/align_lyrics.py` first.
+- **D4. Recording format.** Is WAV acceptable for the first version, given its size? *Yes.*
+- **D5. Devices.** Is Safari on iPhone a target? *Adding songs and generating targets may be
+  desktop-only at first. Every committed song in `public/songs/` and all singing feedback must
+  work on iPhone.* Phase 1's Add Song flow is therefore verified on desktop browsers only, and
+  every phase must not regress the existing sing, practice and results screens on iPhone.
+  Verifying those screens on a real iPhone is its own work item, because it cannot be done
+  from a Linux container.
 
 ## Non-goals
 

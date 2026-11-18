@@ -1866,6 +1866,49 @@ input[type='range']::-moz-range-thumb {
   background: var(--accent-soft);
 }
 
+/* ---------- add song ---------- */
+
+.song-picker {
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.song-picker select {
+  max-width: min(100%, 420px);
+}
+
+.add-names {
+  flex-wrap: wrap;
+  align-items: flex-start;
+}
+
+.add-names .field {
+  min-width: 200px;
+}
+
+textarea {
+  font: inherit;
+  color: inherit;
+}
+
+.lyrics-input {
+  width: 100%;
+  resize: vertical;
+  line-height: 1.45;
+}
+
+.meter .analysis-fill {
+  background: var(--accent);
+  transition: width 0.2s linear;
+}
+
+.report-lines {
+  margin: 0;
+  padding-left: 18px;
+  display: grid;
+  gap: 4px;
+}
+
 /* ---------- warm-up ---------- */
 
 .warm-card {

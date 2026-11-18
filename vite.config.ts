@@ -6,6 +6,10 @@ export default defineConfig({
     target: 'es2022',
     sourcemap: true,
   },
+  // The song analysis worker (src/analysis/worker.ts) is a module worker.
+  worker: {
+    format: 'es',
+  },
   test: {
     include: ['tests/**/*.test.ts'],
     environment: 'node',
