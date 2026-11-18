@@ -108,7 +108,7 @@ export function singScreen(app: App, route: Route): Screen {
   const recBtn = h(
     'button',
     { class: 'btn toggle rec-btn', 'aria-pressed': 'false', onclick: () => void toggleRecording(), title: 'Record this session: your voice and the music you hear, saved in this browser' },
-    h('i', { class: 'rec-dot' }),
+    h('i', { class: 'dot', style: 'color:var(--off)' }),
     recLabel,
   );
 

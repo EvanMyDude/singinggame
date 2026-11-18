@@ -43,7 +43,7 @@ async function confirmDelete(meta: TakeMeta): Promise<boolean> {
 
 export function recordingsScreen(app: App): Screen {
   const list = h('div', { class: 'stack', style: 'gap:10px' }, h('p', { class: 'muted' }, 'Loading…'));
-  const usage = h('span', { class: 'faint small' });
+  const usage = h('span');
 
   const render = async () => {
     const takes = await listTakes();
@@ -79,7 +79,7 @@ export function recordingsScreen(app: App): Screen {
             h(
               'button',
               {
-                class: 'btn ghost small',
+                class: 'btn danger small',
                 onclick: async () => {
                   if (await confirmDelete(m)) void render();
                 },
@@ -91,15 +91,16 @@ export function recordingsScreen(app: App): Screen {
       );
     }
     const total = takes.reduce((s, m) => s + m.bytes, 0);
-    usage.textContent = takes.length ? `${takes.length} recording${takes.length === 1 ? '' : 's'} · ${fmtBytes(total)} in this browser` : '';
+    usage.textContent = takes.length ? ` ${takes.length} recording${takes.length === 1 ? '' : 's'}, ${fmtBytes(total)}.` : '';
   };
   void render();
 
   const el = h(
     'div',
     { class: 'screen', style: 'max-width:900px' },
-    h('div', { class: 'topbar' }, backButton(() => app.go({ name: 'home' })), h('h2', { style: 'font-size:22px' }, 'Recordings'), h('div', { class: 'spacer' }), usage),
-    h('p', { class: 'muted', style: 'margin-top:0' }, 'Takes are kept only in this browser and can be cleared with its site data. Download the ones you want to keep.'),
+    h('div', { class: 'topbar' }, backButton(() => app.go({ name: 'home' })), h('div', { class: 'spacer' })),
+    h('h2', { style: 'font-size:32px;margin-bottom:6px' }, 'Recordings'),
+    h('p', { class: 'muted', style: 'margin:0 0 18px' }, 'Recordings are kept only in this browser and can be cleared with its site data. Download the ones you want to keep.', usage),
     list,
   );
   return { el };
@@ -257,11 +258,11 @@ export function takeScreen(app: App, route: Route): Screen {
   if (route.name !== 'take') throw new Error('bad route');
   const id = route.id;
   const body = h('div', { class: 'stack' }, h('p', { class: 'muted' }, 'Loading the recording…'));
-  const titleEl = h('h2', { style: 'font-size:22px' }, 'Recording');
+  const titleEl = h('h2', { style: 'font-size:32px;margin-bottom:6px' }, 'Recording');
   let cleanup: () => void = () => {};
   let destroyed = false;
 
-  const el = h('div', { class: 'screen', style: 'max-width:1100px' }, h('div', { class: 'topbar' }, backButton(() => app.go({ name: 'recordings' }), 'Recordings'), titleEl, h('div', { class: 'spacer' })), body);
+  const el = h('div', { class: 'screen', style: 'max-width:1100px' }, h('div', { class: 'topbar' }, backButton(() => app.go({ name: 'recordings' })), h('div', { class: 'spacer' })), titleEl, body);
 
   void (async () => {
     let meta = await getTakeMeta(id);
@@ -292,8 +293,15 @@ export function takeScreen(app: App, route: Route): Screen {
       const highway = new Highway(canvas, song, 0, song.totalBeats);
       highway.showNoteNames = app.store.settings.showNoteNames;
       const none: (undefined)[] = [];
+      // The first frames of a take come before the song clock settles and carry no song time;
+      // until then the view holds where the take's song begins instead of showing nothing.
+      let first: { t: number; s: number } | null = null;
+      for (let j = 0; j < take.frames.t.length && !first; j++) {
+        if (Number.isFinite(take.frames.song[j]!)) first = { t: take.frames.t[j]!, s: take.frames.song[j]! };
+      }
       drawFrame = (t) => {
-        const s = songTimeAt(take.frames, t);
+        let s = songTimeAt(take.frames, t);
+        if (!Number.isFinite(s) && first && t <= first.t) s = first.s - (first.t - t);
         const { trail, head } = Number.isFinite(s) ? trailAt(take, song, map, t, fold) : { trail: [], head: null };
         highway.draw({
           beat: Number.isFinite(s) ? map.beat(s) : -1e3,
@@ -336,7 +344,7 @@ export function takeScreen(app: App, route: Route): Screen {
     const player = new TakePlayer(app.rt().engine.ctx, take, gain);
     const timeEl = h('span', { class: 'time num' }, '0:00');
     const fill = h('i', { class: 'prog-fill' });
-    const prog = h('div', { class: 'prog seekable', role: 'slider', 'aria-label': 'Position', tabindex: '0' }, fill);
+    const prog = h('div', { class: 'prog seekable', role: 'slider', 'aria-label': 'Position', 'aria-valuemin': '0', 'aria-valuemax': String(Math.round(take.duration)), 'aria-valuenow': '0', tabindex: '0' }, fill);
     const playBtn = h('button', { class: 'btn primary icon-lg', 'aria-label': 'Play', onclick: () => void toggle() }, icon('play2'));
     const toggle = async () => {
       if (player.playing) player.pause();
@@ -451,7 +459,7 @@ export function takeScreen(app: App, route: Route): Screen {
     const parts: (HTMLElement | null)[] = [
       chips,
       h('div', { class: 'take-stage' }, canvas),
-      h('div', { class: 'transport-row' }, playBtn, timeEl, prog, h('span', { class: 'time num faint' }, fmtTime(player.duration))),
+      h('div', { class: 'transport-row take-transport' }, playBtn, timeEl, prog, h('span', { class: 'time num faint' }, fmtTime(player.duration))),
       take.music
         ? h(
             'div',
@@ -462,7 +470,7 @@ export function takeScreen(app: App, route: Route): Screen {
             h('button', { class: 'btn ghost small', onclick: () => { gainSlider.value = String(auto); gainSlider.dispatchEvent(new Event('input')); } }, `Auto (${Math.round(auto * 100)}%)`),
           )
         : null,
-      melody || !meta.songId ? null : h('p', { class: 'faint small', style: 'margin:0' }, 'The song of this take is not in this browser, so its target melody cannot be drawn.'),
+      melody || !meta.songId ? null : h('p', { class: 'faint small', style: 'margin:0' }, 'The song of this recording is not in this browser, so its target melody cannot be drawn.'),
       h('div', { class: 'card stack' }, downloads, h('div', { class: 'row', style: 'flex-wrap:wrap' }, h('span', { class: 'field-label' }, 'Name'), nameIn, h('div', { class: 'grow' }), h('button', { class: 'btn danger', onclick: async () => { if (await confirmDelete(meta!)) app.go({ name: 'recordings' }); } }, 'Delete')), msg),
       h('p', { class: 'faint tiny', style: 'margin:0' }, 'The mix is your voice over the music exactly as you heard it, at the speed and with the loops you used, lined up by removing the round-trip latency the scorer removes. The voice file is the microphone alone.'),
     ];
@@ -475,6 +483,7 @@ export function takeScreen(app: App, route: Route): Screen {
       drawFrame(t);
       timeEl.textContent = fmtTime(t);
       fill.style.width = `${(player.duration ? t / player.duration : 0) * 100}%`;
+      prog.setAttribute('aria-valuenow', String(Math.round(t)));
     };
     raf = requestAnimationFrame(loop);
     const onKey = (e: KeyboardEvent) => {

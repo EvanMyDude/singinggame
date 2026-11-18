@@ -25,7 +25,7 @@ export function monitorScreen(app: App): Screen {
   const startBtn = h('button', { class: 'btn primary', onclick: () => void toggleRun() }, 'Start');
   const holdBtn = h('button', { class: 'btn', 'aria-pressed': 'false', onclick: () => toggleHold(), disabled: true }, 'Hold');
   const recLabel = h('span', null, 'Record');
-  const recBtn = h('button', { class: 'btn toggle rec-btn', 'aria-pressed': 'false', disabled: true, onclick: () => void toggleRec(), title: 'Record your voice; saved in this browser' }, h('i', { class: 'rec-dot' }), recLabel);
+  const recBtn = h('button', { class: 'btn toggle rec-btn', 'aria-pressed': 'false', disabled: true, onclick: () => void toggleRec(), title: 'Record your voice; saved in this browser' }, h('i', { class: 'dot', style: 'color:var(--off)' }), recLabel);
   const recNote = h('span', { class: 'faint small' });
   let recorder: SessionRecorder | null = null;
   const sensVal = h('span', { class: 'val' }, String(sensitivityFromGate(app.store.settings.gateDb)));
@@ -115,7 +115,8 @@ export function monitorScreen(app: App): Screen {
       await saveTake(take, { mode: 'monitor', songId: null, songTitle: null, latency: 0, speeds: [] });
       recNote.textContent = 'Saved · Home → Recordings';
     } catch (e) {
-      recNote.textContent = `Could not save the recording: ${(e as Error).message}`;
+      msg.textContent = `Could not save the recording: ${(e as Error).message}`;
+      msg.style.display = '';
     }
   };
 

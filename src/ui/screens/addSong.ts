@@ -49,9 +49,11 @@ export function addSongScreen(app: App, route: Route): Screen {
   const gateIn = h('input', { class: 'input', type: 'number', min: 10, max: 60, step: 1, value: 35, 'aria-label': 'Level gate in dB', style: 'width:90px' });
   const msg = h('div', { class: 'notice', style: 'display:none' });
   const slotsHost = h('div', { class: 'stack', style: 'gap:0' });
-  const progressFill = h('div', { class: 'fill analysis-fill' });
+  const progressFill = h('i', { class: 'prog-fill' });
+  // flex:none: .prog fills a transport row's width; in this column it must keep its height.
+  const progressBar = h('div', { class: 'prog', style: 'flex:none', role: 'progressbar', 'aria-label': 'Analysis progress', 'aria-valuemin': '0', 'aria-valuemax': '100', 'aria-valuenow': '0' }, progressFill);
   const progressText = h('div', { class: 'muted small' });
-  const progress = h('div', { class: 'stack', style: 'display:none;gap:8px' }, h('div', { class: 'meter' }, progressFill), progressText);
+  const progress = h('div', { class: 'stack', style: 'display:none;gap:8px' }, progressBar, progressText);
   const reportHost = h('div');
   const analyzeBtn = h('button', { class: 'btn primary big', onclick: () => void analyze() }, existing ? 'Analyze again' : 'Make targets');
   const cancelBtn = h('button', { class: 'btn ghost', style: 'display:none', onclick: () => run?.cancel() }, 'Cancel');
@@ -79,6 +81,7 @@ export function addSongScreen(app: App, route: Route): Screen {
     if (!titleIn.value.trim()) titleIn.value = titleFromFileName(f.name);
     result = null;
     reportHost.replaceChildren();
+    analyzeBtn.className = 'btn primary big';
     renderSlots();
   };
 
@@ -98,7 +101,7 @@ export function addSongScreen(app: App, route: Route): Screen {
         const f = files[s.key];
         const state = f
           ? h('span', { class: 'chip ok' }, h('i', { class: 'dot' }), `${names[s.key]} · ${fmtSize(f.size)}`)
-          : h('span', { class: `chip ${s.required ? 'warn' : ''}` }, h('i', { class: 'dot' }), s.required ? 'needed' : 'optional');
+          : h('span', { class: `chip ${s.required ? 'warn' : ''}` }, h('i', { class: 'dot' }), s.required ? 'missing (required)' : 'missing (optional)');
         return h(
           'div',
           { class: 'pack-row' },
@@ -162,6 +165,8 @@ export function addSongScreen(app: App, route: Route): Screen {
 
   const renderReport = () => {
     if (!result) return;
+    // One primary call to action at a time: saving is now the next step.
+    analyzeBtn.className = 'btn big';
     const { report } = result;
     const range = report.range ? `${noteNameWithOctave(report.range[0])}–${noteNameWithOctave(report.range[1])}` : '';
     reportHost.replaceChildren(
@@ -183,7 +188,7 @@ export function addSongScreen(app: App, route: Route): Screen {
         h(
           'div',
           { class: 'row', style: 'flex-wrap:wrap' },
-          h('button', { class: 'btn primary', onclick: () => void save(false) }, existing ? 'Use the new targets' : 'Save song'),
+          h('button', { class: 'btn primary big', onclick: () => void save(false) }, existing ? 'Use the new targets' : 'Save song'),
           !existing && lyricsIn.value.trim() ? h('button', { class: 'btn', onclick: () => void save(true) }, 'Save and sync lyrics') : null,
         ),
       ),
@@ -198,9 +203,11 @@ export function addSongScreen(app: App, route: Route): Screen {
     if (!(gate >= 10 && gate <= 60)) return say('bad', 'The level gate must be between 10 and 60 dB.');
     result = null;
     reportHost.replaceChildren();
+    analyzeBtn.className = 'btn primary big';
     busy(true);
     const setProgress = (stage: string, f: number) => {
       progressFill.style.width = `${Math.round(f * 100)}%`;
+      progressBar.setAttribute('aria-valuenow', String(Math.round(f * 100)));
       progressText.textContent = `${stage}…`;
     };
     try {
@@ -295,10 +302,11 @@ export function addSongScreen(app: App, route: Route): Screen {
   const el = h(
     'div',
     { class: 'screen', style: 'max-width:860px' },
-    h('div', { class: 'topbar' }, backButton(() => app.go({ name: existing ? 'settings' : 'home' })), h('h2', { style: 'font-size:22px' }, existing ? `Analyze again · ${existing.title}` : 'Add a song'), h('div', { class: 'spacer' })),
+    h('div', { class: 'topbar' }, backButton(() => app.go({ name: existing ? 'settings' : 'home' })), h('div', { class: 'spacer' })),
+    h('h2', { style: 'font-size:32px;margin-bottom:6px' }, existing ? `Analyze again · ${existing.title}` : 'Add a song'),
     h(
       'p',
-      { class: 'muted', style: 'margin-top:0' },
+      { class: 'muted', style: 'margin:0 0 18px' },
       existing
         ? 'Makes the pitch targets again from the files stored for this song, for example with a different level gate. The lyrics and their timing stay as they are.'
         : 'Pick the instrumental, the isolated lead vocal and, if you have it, the full song. This browser makes the pitch targets; the files are stored here and are not uploaded anywhere.',
